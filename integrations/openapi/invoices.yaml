@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  title: Invoices API
+  version: 0.1.0
+paths:
+  /invoices:
+    get:
+      summary: List invoices
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create invoice
+      responses:
+        '201':
+          description: Created
+  /invoices/{id}:
+    get:
+      summary: Get invoice
+      responses:
+        '200': { description: OK }
+    patch:
+      summary: Update invoice
+      responses:
+        '200': { description: OK }

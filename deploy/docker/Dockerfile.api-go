@@ -1,0 +1,10 @@
+FROM golang:1.22 as build
+WORKDIR /src
+COPY . .
+WORKDIR /src/apps/api-go
+RUN go mod tidy && go build -o /bin/invoicer ./cmd/invoicer
+
+FROM gcr.io/distroless/base-debian12
+COPY --from=build /bin/invoicer /invoicer
+EXPOSE 8080
+ENTRYPOINT ["/invoicer"]
