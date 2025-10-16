@@ -9,3 +9,6 @@ dist/
 **/node_modules
 **/.idea
 **/.vscode
+.token_cache.bin
+invoices.csv
+invoices.json

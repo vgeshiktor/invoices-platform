@@ -1,0 +1,188 @@
+{
+    "version": "1.0",
+    "notes": {
+        "graph_facts": [
+            "Use `$search` for subject/body keyword search; set header `ConsistencyLevel: eventual` and include `$count=true` when mixing with `$filter`.",
+            "You CAN filter messages with `hasAttachments eq true` and by `receivedDateTime`.",
+            "You CANNOT filter attachment file types at the /messages or /attachments list endpoints; detect extensions client-side.",
+            "Use `$top` in pages (e.g., 50–200) and iterate with `@odata.nextLink`."
+        ]
+    },
+    "query_defaults": {
+        "endpoint_base": "{GRAPH_BASE}/me/messages",
+        "headers": {
+            "ConsistencyLevel": "eventual"
+        },
+        "params_common": {
+            "$count": "true",
+            "$top": "100",
+            "$select": "id,subject,from,receivedDateTime,hasAttachments,bodyPreview,webLink",
+            "$orderby": "receivedDateTime desc"
+        },
+        "lookback_days": 120
+    },
+    "keyword_sets": {
+        "hebrew_core": [
+            "חשבונית",
+            "חשבונית מס",
+            "קבלה",
+            "אסמכתא",
+            "תשלום",
+            "דרישת תשלום",
+            "קבלה מס",
+            "חשבונית מס קבלה",
+            "חיוב",
+            "זיכוי",
+            "שובר תשלום"
+        ],
+        "english_core": [
+            "invoice",
+            "tax invoice",
+            "receipt",
+            "payment receipt",
+            "billing statement",
+            "payment request",
+            "charge",
+            "credit note",
+            "statement",
+            "bill"
+        ],
+        "hebrew_context": [
+            "מספר חשבונית",
+            "סכום לתשלום",
+            "יתרה לתשלום",
+            "פירוט חיובים",
+            "לצפייה בחשבונית",
+            "הורדה",
+            "הורד קובץ",
+            "קישור לחשבונית"
+        ],
+        "english_context": [
+            "invoice number",
+            "amount due",
+            "balance due",
+            "view invoice",
+            "download invoice",
+            "download receipt",
+            "statement",
+            "view bill",
+            "download bill"
+        ]
+    },
+    "attachment_detection": {
+        "extensions_prefer": [
+            ".pdf",
+            ".tif",
+            ".tiff",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".xlsx",
+            ".xls"
+        ],
+        "name_hints": [
+            "invoice",
+            "receipt",
+            "חשבונית",
+            "קבלה",
+            "statement",
+            "bill"
+        ]
+    },
+    "link_detection": {
+        "require_https": true,
+        "url_keywords": [
+            "invoice",
+            "receipt",
+            "statement",
+            "bill",
+            "חשבונית",
+            "קבלה",
+            "תשלום",
+            "payment",
+            "download",
+            "view"
+        ],
+        "trusted_providers": [
+            "greeninvoice.co.il",
+            "icount.co.il",
+            "ezcount.co.il",
+            "priority-software.com",
+            "sap.com",
+            "zoho.com",
+            "xero.com",
+            "quickbooks.intuit.com",
+            "intuit.com",
+            "stripe.com",
+            "paypal.com",
+            "wix.com",
+            "shopify.com",
+            "tax.gov.il",
+            "gov.il",
+            "freshbooks.com",
+            "waveapps.com"
+        ],
+        "heuristics": {
+            "path_patterns": [
+                "invoice",
+                "receipt",
+                "billing",
+                "payments",
+                "download",
+                "documents",
+                "חשבונית",
+                "קבלה",
+                "תשלום",
+                "bill",
+                "statement",
+                "view"
+            ],
+            "file_like_suffixes": [
+                ".pdf",
+                ".html",
+                ".htm",
+                ".aspx"
+            ]
+        }
+    },
+    "graph_query_strategies": [
+        {
+            "name": "attachments_and_keywords_recent",
+            "description": "Invoices with attachments, recent window.",
+            "params": {
+                "$filter": "(hasAttachments eq true) and (receivedDateTime ge {ISO_UTC_NOW_MINUS_LOOKBACK})",
+                "$search": "\"invoice OR receipt OR חשבונית OR קבלה\""
+            }
+        },
+        {
+            "name": "keywords_only_recent",
+            "description": "Catches link-only invoices (no attachments).",
+            "params": {
+                "$filter": "receivedDateTime ge {ISO_UTC_NOW_MINUS_LOOKBACK}",
+                "$search": "\"(invoice OR receipt OR statement OR billing OR חשבונית OR קבלה OR תשלום)\""
+            }
+        },
+        {
+            "name": "hebrew_bias",
+            "description": "Bias toward Hebrew terms (your majority).",
+            "params": {
+                "$filter": "receivedDateTime ge {ISO_UTC_NOW_MINUS_LOOKBACK}",
+                "$search": "\"(חשבונית OR \\\"חשבונית מס\\\" OR קבלה OR תשלום OR \\\"חשבונית מס קבלה\\\")\""
+            }
+        },
+        {
+            "name": "provider_whitelist_bump",
+            "description": "Prioritize known invoice providers by simple body search.",
+            "params": {
+                "$filter": "receivedDateTime ge {ISO_UTC_NOW_MINUS_LOOKBACK}",
+                "$search": "\"(greeninvoice.co.il OR icount.co.il OR ezcount.co.il OR quickbooks.intuit.com OR stripe.com OR paypal.com OR zoho.com OR xero.com OR shopify.com OR tax.gov.il)\""
+            }
+        }
+    ],
+    "scoring": {
+        "he_weight": 1.2,
+        "en_weight": 1.0,
+        "base_attachment_bonus": 0.25,
+        "base_link_bonus": 0.25
+    }
+}
