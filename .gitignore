@@ -12,3 +12,4 @@ dist/
 .token_cache.bin
 invoices.csv
 invoices.json
+invoices_summary_*.csv
