@@ -17,5 +17,9 @@ invoice_messages_*.csv
 invoice_messages_*.json
 raw_candidates.json
 rejected.json
+invoices/*
 invoices_out/*
 bezeq_html_dumps/*
+invoices_out_bezeq/*
+invoices_out_old/*
+download_report.json
