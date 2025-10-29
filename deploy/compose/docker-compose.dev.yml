@@ -4,20 +4,21 @@ services:
       context: ../../
       dockerfile: deploy/docker/Dockerfile.api-go
     ports: ["8080:8080"]
+    env_file: ["../../.env"]
     depends_on: [db]
-    environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/invoices?sslmode=disable
 
   workers-py:
     build:
       context: ../../
       dockerfile: deploy/docker/Dockerfile.workers-py
+    env_file: ["../../.env"]
+    volumes:
+      - ../../storage:/data/files
     depends_on: [db, mq]
 
   n8n:
     image: n8nio/n8n:latest
-    env_file:
-      - ../../integrations/n8n/n8n.env.example
+    env_file: ["../../integrations/n8n/n8n.env.example"]
     ports: ["5678:5678"]
     volumes:
       - n8n_data:/home/node/.n8n

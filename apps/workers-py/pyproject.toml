@@ -2,4 +2,21 @@
 name = "workers"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["requests"]
+dependencies = [
+  "httpx",
+  "pydantic>=2",
+  "tenacity",
+  "python-dotenv",
+  "ruff",
+  "mypy",
+  "pytest",
+  "pdfminer.six",
+  "pypdf",
+  "rapidfuzz"
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
