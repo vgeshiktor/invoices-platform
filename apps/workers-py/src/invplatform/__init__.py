@@ -1,0 +1,1 @@
+'"""Invoice platform shared package."""'

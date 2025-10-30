@@ -22,7 +22,7 @@ graph_invoice_finder.v3.9.2.py
     playwright install chromium
 
 דוגמאות:
-    python graph_invoice_finder.v3.9.2.py \
+    python -m invplatform.cli.graph_invoice_finder \
       --client-id "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" \
       --authority consumers \
       --start-date 2025-09-01 --end-date 2025-10-01 \
@@ -34,7 +34,7 @@ graph_invoice_finder.v3.9.2.py
       --bezeq-trace --bezeq-screenshots
 
     # דיבוג מוגבר + חלון דפדפן ל-Flutter של בזק:
-    python graph_invoice_finder.v3.9.2.py \
+    python -m invplatform.cli.graph_invoice_finder \
       --client-id "..." --authority consumers \
       --start-date 2025-09-01 --end-date 2025-10-01 \
       --invoices-dir invoices_out \
@@ -45,11 +45,9 @@ graph_invoice_finder.v3.9.2.py
 import argparse
 import csv
 import datetime as dt
-import hashlib
 import json
 import logging
 import os
-import pathlib
 import re
 import sys
 import time
@@ -60,22 +58,23 @@ import msal
 import requests
 from bs4 import BeautifulSoup
 
-# PyMuPDF (pymupdf)
-try:
-    import fitz
-
-    HAVE_PYMUPDF = True
-except Exception:
-    HAVE_PYMUPDF = False
-
 from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
 
+from ..domain import constants as domain_constants
+from ..domain import files as domain_files
+from ..domain import pdf as domain_pdf
+from ..domain import relevance as domain_relevance
+
 
 # ---------- Utils ----------
-def ensure_dir(p: str) -> str:
-    pathlib.Path(p).mkdir(parents=True, exist_ok=True)
-    return p
+ensure_dir = domain_files.ensure_dir
+sanitize_filename = domain_files.sanitize_filename
+short_msg_tag = domain_files.short_msg_tag
+ensure_unique_path = domain_files.ensure_unique_path
+sha256_bytes = domain_files.sha256_bytes
+keyword_in_text = domain_relevance.keyword_in_text
+within_domain = domain_relevance.within_domain
 
 
 def now_utc_iso() -> str:
@@ -86,179 +85,23 @@ def now_stamp() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 
-def sanitize_filename(name: str, default: str = "invoice.pdf") -> str:
-    name = re.sub(r'[\\/:*?"<>|]+', "_", (name or "").strip())
-    return name or default
-
-
-def short_msg_tag(msg_id: str, n: int = 8) -> str:
-    s = re.sub(r"[^A-Za-z0-9]", "", msg_id or "")
-    return (s[-n:] if len(s) >= n else s) or "msg"
-
-
-def ensure_unique_path(
-    base_dir: str, wanted_name: str, tag: Optional[str] = None
-) -> str:
-    wanted_name = sanitize_filename(wanted_name)
-    stem, ext = os.path.splitext(wanted_name)
-    if not ext:
-        ext = ".pdf"
-    if tag:
-        stem = f"{stem}__{tag}"
-    candidate = os.path.join(base_dir, f"{stem}{ext}")
-    i = 2
-    while os.path.exists(candidate):
-        candidate = os.path.join(base_dir, f"{stem}__{i}{ext}")
-        i += 1
-    return candidate
-
-
-def sha256_bytes(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
-
-
-_KEYWORD_PATTERNS: Dict[Tuple[str, bool], re.Pattern] = {}
-
-
-def keyword_in_text(text: str, term: str, ignore_case: bool = False) -> bool:
-    if not text or not term:
-        return False
-    key = (term, ignore_case)
-    pattern = _KEYWORD_PATTERNS.get(key)
-    if pattern is None:
-        flags = re.UNICODE
-        if ignore_case:
-            flags |= re.IGNORECASE
-        pattern = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", flags)
-        _KEYWORD_PATTERNS[key] = pattern
-    return bool(pattern.search(text))
-
-
-def within_domain(u: str, domains: List[str]) -> bool:
-    try:
-        host = urlparse(u).hostname or ""
-        return any(host.endswith(d) for d in domains)
-    except Exception:
-        return False
-
-
 # ---------- Keywords ----------
-HEB_POS = [
-    "חשבונית",
-    "חשבונית מס",
-    "חשבונית מס קבלה",
-    "קבלה",
-    "ארנונה",
-    "שובר תשלום",
-    "דרישת תשלום",
-    "אגרת",
-    "היטל",
-    "מספר נכס",
-]
-EN_POS = ["invoice", "tax invoice", "receipt", "bill"]  # 'statement' הוסר כדי לצמצם FP
-
-HEB_NEG = [
-    "תלוש שכר",
-    "תלוש",
-    "משכורת",
-    "שכר",
-    "ברוטו",
-    "נטו",
-    "הפרשות פנסיה",
-    "שעות נוספות",
-]
-EN_NEG = [
-    "payslip",
-    "pay slip",
-    "salary",
-    "payroll",
-    "net pay",
-    "gross pay",
-    "employee",
-    "employer",
-]
-
-HEB_MUNICIPAL = [
-    "ארנונה",
-    "עיריית",
-    "עיריה",
-    "שובר תשלום",
-    "רשות מקומית",
-    "תאגיד מים",
-    "מיתב",
-]
-
-TRUSTED_PROVIDERS = [
-    "myinvoice.bezeq.co.il",
-    "my.bezeq.co.il",
-    "bmy.bezeq.co.il",
-    "icount.co.il",
-    "greeninvoice.co.il",
-    "ezcount.co.il",
-    "tax.gov.il",
-    "gov.il",
-    "quickbooks.intuit.com",
-    "stripe.com",
-]
+EN_POS = domain_constants.EN_POS
+HEB_POS = domain_constants.HEB_POS
+EN_NEG = domain_constants.EN_NEG
+HEB_NEG = domain_constants.HEB_NEG
+TRUSTED_PROVIDERS = domain_constants.TRUSTED_PROVIDERS
+HEB_MUNICIPAL = domain_constants.HEB_MUNICIPAL
 
 
 # ---------- PDF verification ----------
-def pdf_keyword_stats(path: str) -> Dict:
-    stats = {"pos_hits": 0, "neg_hits": 0, "pos_terms": [], "neg_terms": []}
-    if not HAVE_PYMUPDF:
-        # ללא PyMuPDF – לא נחסום, רק נחזיר ניטרלי
-        return stats
-    try:
-        doc = fitz.open(path)
-        for page in doc:
-            text = page.get_text("text") or ""
-            # חיובי: עברית ואנגלית
-            for k in EN_POS:
-                if keyword_in_text(text, k, ignore_case=True):
-                    stats["pos_hits"] += 1
-                    stats["pos_terms"].append(k)
-            for k in HEB_POS:
-                if keyword_in_text(text, k):
-                    stats["pos_hits"] += 1
-                    stats["pos_terms"].append(k)
-            # שלילי:
-            for k in EN_NEG:
-                if keyword_in_text(text, k, ignore_case=True):
-                    stats["neg_hits"] += 1
-                    stats["neg_terms"].append(k)
-            for k in HEB_NEG:
-                if keyword_in_text(text, k):
-                    stats["neg_hits"] += 1
-                    stats["neg_terms"].append(k)
-            # נסתפק בקריאה חלקית
-            if stats["pos_hits"] >= 3 or stats["neg_hits"] >= 1:
-                break
-    except Exception:
-        pass
-    return stats
+pdf_keyword_stats = domain_pdf.pdf_keyword_stats
+pdf_confidence = domain_pdf.pdf_confidence
 
 
-def pdf_confidence(stats: Dict) -> float:
-    pos = int(stats.get("pos_hits", 0) or 0)
-    neg = int(stats.get("neg_hits", 0) or 0)
-    total = pos + neg
-    if total <= 0:
-        return 1.0 if pos > 0 else 0.0
-    return pos / total
-
-
-def is_municipal_text(t: str) -> bool:
-    return any(k in t for k in HEB_MUNICIPAL)
-
-
-def body_has_negative(t: str) -> bool:
-    low = t.lower()
-    return any(k in t for k in HEB_NEG) or any(k in low for k in EN_NEG)
-
-
-def body_has_positive(t: str) -> bool:
-    low = t.lower()
-    return any(k in t for k in HEB_POS) or any(k in low for k in EN_POS)
+is_municipal_text = domain_relevance.is_municipal_text
+body_has_negative = domain_relevance.body_has_negative
+body_has_positive = domain_relevance.body_has_positive
 
 
 # ---------- Graph client ----------
@@ -317,9 +160,7 @@ class GraphClient:
         exclude_parent_ids: Optional[List[str]] = None,
     ):
         url = f"{GRAPH_BASE}/me/messages"
-        base_filter = (
-            f"receivedDateTime ge {start_iso} and receivedDateTime lt {end_iso}"
-        )
+        base_filter = f"receivedDateTime ge {start_iso} and receivedDateTime lt {end_iso}"
         if exclude_parent_ids:
             for fid in exclude_parent_ids:
                 if fid:
@@ -348,9 +189,7 @@ class GraphClient:
 
     def list_attachments(self, msg_id: str) -> List[dict]:
         url = f"{GRAPH_BASE}/me/messages/{msg_id}/attachments"
-        data = self.get(
-            url, params={"$top": "50", "$select": "id,name,contentType,size,isInline"}
-        )
+        data = self.get(url, params={"$top": "50", "$select": "id,name,contentType,size,isInline"})
         return data.get("value", [])
 
     def download_attachment(self, msg_id: str, att_id: str) -> bytes:
@@ -436,9 +275,7 @@ def bezeq_fetch_with_api_sniff(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
             ),
-            extra_http_headers={
-                "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"
-            },
+            extra_http_headers={"Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"},
         )
         if keep_trace:
             context.tracing.start(screenshots=True, snapshots=True, sources=False)
@@ -447,21 +284,11 @@ def bezeq_fetch_with_api_sniff(
 
         def on_console(m):
             try:
-                t = (
-                    m.type()
-                    if callable(getattr(m, "type", None))
-                    else str(getattr(m, "type", ""))
-                )
-                x = (
-                    m.text()
-                    if callable(getattr(m, "text", None))
-                    else str(getattr(m, "text", ""))
-                )
+                t = m.type() if callable(getattr(m, "type", None)) else str(getattr(m, "type", ""))
+                x = m.text() if callable(getattr(m, "text", None)) else str(getattr(m, "text", ""))
                 note(f"console:{t}:{x}")
                 if "GetAttachedInvoiceById" in x:
-                    mm = re.search(
-                        r"https?://[^\s\"']+GetAttachedInvoiceById[^\s\"']+", x
-                    )
+                    mm = re.search(r"https?://[^\s\"']+GetAttachedInvoiceById[^\s\"']+", x)
                     if mm:
                         api_urls.append(mm.group(0))
             except Exception:
@@ -504,9 +331,7 @@ def bezeq_fetch_with_api_sniff(
                     q = parse_qs(urlparse(u).query)
                     inv_id = (q.get("InvoiceId") or [""])[0]
                     cd = resp.headers.get("content-disposition") or ""
-                    m = re.search(
-                        r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I
-                    )
+                    m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
                     if m:
                         name = sanitize_filename(m.group(1))
                         if not name.lower().endswith(".pdf"):
@@ -557,9 +382,7 @@ def bezeq_fetch_with_api_sniff(
 
         if keep_trace:
             try:
-                context.tracing.stop(
-                    path=os.path.join(out_dir, f"bezeq_trace_{now_stamp()}.zip")
-                )
+                context.tracing.stop(path=os.path.join(out_dir, f"bezeq_trace_{now_stamp()}.zip"))
             except Exception:
                 pass
         context.close()
@@ -635,25 +458,15 @@ def main():
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.INFO, format="%(message)s"
-    )
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(message)s")
 
     inv_dir = ensure_dir(args.invoices_dir)
-    quarant_dir = (
-        ensure_dir(os.path.join(inv_dir, "quarantine"))
-        if args.keep_quarantine
-        else None
-    )
+    quarant_dir = ensure_dir(os.path.join(inv_dir, "quarantine")) if args.keep_quarantine else None
     tmp_dir = ensure_dir(os.path.join(inv_dir, "_tmp"))
 
     try:
-        start_dt = dt.datetime.strptime(args.start_date, "%Y-%m-%d").replace(
-            tzinfo=dt.timezone.utc
-        )
-        end_dt = dt.datetime.strptime(args.end_date, "%Y-%m-%d").replace(
-            tzinfo=dt.timezone.utc
-        )
+        start_dt = dt.datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
+        end_dt = dt.datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
     except ValueError:
         print("פורמט תאריך לא תקין. השתמשו ב-YYYY-MM-DD")
         sys.exit(3)
@@ -712,9 +525,7 @@ def main():
         processed_msg_ids.add(msg_id)
         subject = msg.get("subject") or ""
         preview = msg.get("bodyPreview") or ""
-        from_addr = ((msg.get("from") or {}).get("emailAddress") or {}).get(
-            "address"
-        ) or ""
+        from_addr = ((msg.get("from") or {}).get("emailAddress") or {}).get("address") or ""
         received = msg.get("receivedDateTime")
         web_link = msg.get("webLink")
         has_attachments = bool(msg.get("hasAttachments"))
@@ -787,9 +598,7 @@ def main():
                             }
                         )
                     else:
-                        candidate.update(
-                            {"decision": "skip", "reason": "duplicate_hash"}
-                        )
+                        candidate.update({"decision": "skip", "reason": "duplicate_hash"})
                     record_candidate(candidate)
                     continue
                 # כתיבה זמנית
@@ -801,9 +610,7 @@ def main():
                 ok = True
                 stats = {"pos_hits": 1, "neg_hits": 0, "pos_terms": [], "neg_terms": []}
                 if args.verify:
-                    ok, stats = decide_pdf_relevance(
-                        tmp_path, trusted_hint=trusted_hint
-                    )
+                    ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
 
                 confidence = pdf_confidence(stats)
                 candidate.update({"stats": stats, "confidence": confidence})
@@ -842,9 +649,7 @@ def main():
                                 "confidence": confidence,
                             }
                         )
-                        candidate.update(
-                            {"decision": "reject", "reason": "verify_failed"}
-                        )
+                        candidate.update({"decision": "reject", "reason": "verify_failed"})
                     record_candidate(candidate)
                     continue
 
@@ -939,9 +744,7 @@ def main():
                                 }
                             )
                         else:
-                            candidate.update(
-                                {"decision": "skip", "reason": "duplicate_hash"}
-                            )
+                            candidate.update({"decision": "skip", "reason": "duplicate_hash"})
                         record_candidate(candidate)
                         continue
                     # כתיבה זמנית + אימות
@@ -962,9 +765,7 @@ def main():
                         "neg_terms": [],
                     }
                     if args.verify:
-                        ok, stats = decide_pdf_relevance(
-                            tmp_path, trusted_hint=trusted_hint
-                        )
+                        ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
 
                     confidence = pdf_confidence(stats)
                     candidate.update(
@@ -1009,9 +810,7 @@ def main():
                                     "confidence": confidence,
                                 }
                             )
-                            candidate.update(
-                                {"decision": "reject", "reason": "verify_failed"}
-                            )
+                            candidate.update({"decision": "reject", "reason": "verify_failed"})
                         record_candidate(candidate)
                         continue
 
@@ -1053,9 +852,7 @@ def main():
                     break
 
                 # בזק – Flutter
-                if within_domain(
-                    u, ["myinvoice.bezeq.co.il", "my.bezeq.co.il", "bmy.bezeq.co.il"]
-                ):
+                if within_domain(u, ["myinvoice.bezeq.co.il", "my.bezeq.co.il", "bmy.bezeq.co.il"]):
                     out = bezeq_fetch_with_api_sniff(
                         url=u,
                         out_dir=inv_dir,
@@ -1095,9 +892,7 @@ def main():
                                     }
                                 )
                             else:
-                                candidate.update(
-                                    {"decision": "skip", "reason": "duplicate_hash"}
-                                )
+                                candidate.update({"decision": "skip", "reason": "duplicate_hash"})
                             record_candidate(candidate)
                             continue
 
@@ -1114,9 +909,7 @@ def main():
                             "neg_terms": [],
                         }
                         if args.verify:
-                            ok, stats = decide_pdf_relevance(
-                                tmp_path, trusted_hint=trusted_hint
-                            )
+                            ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
 
                         confidence = pdf_confidence(stats)
                         candidate.update(
@@ -1129,9 +922,7 @@ def main():
 
                         if not ok:
                             if quarant_dir:
-                                out_q = ensure_unique_path(
-                                    quarant_dir, name, tag=msg_tag
-                                )
+                                out_q = ensure_unique_path(quarant_dir, name, tag=msg_tag)
                                 os.replace(tmp_path, out_q)
                                 download_report.append(
                                     {
@@ -1165,9 +956,7 @@ def main():
                                         "confidence": confidence,
                                     }
                                 )
-                                candidate.update(
-                                    {"decision": "reject", "reason": "verify_failed"}
-                                )
+                                candidate.update({"decision": "reject", "reason": "verify_failed"})
                             record_candidate(candidate)
                             continue
 
@@ -1220,9 +1009,7 @@ def main():
                                     "reject": "bezeq_no_pdf",
                                 }
                             )
-                        candidate.update(
-                            {"decision": "no_pdf", "reason": "bezeq_no_pdf"}
-                        )
+                        candidate.update({"decision": "no_pdf", "reason": "bezeq_no_pdf"})
                         record_candidate(candidate)
 
             if not any_saved and links:
@@ -1235,9 +1022,7 @@ def main():
     if args.threshold_sweep:
         try:
             thresholds = [
-                float(x.strip())
-                for x in (args.threshold_sweep or "").split(",")
-                if x.strip()
+                float(x.strip()) for x in (args.threshold_sweep or "").split(",") if x.strip()
             ]
             if thresholds:
                 if saved_confidences:

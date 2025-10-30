@@ -1,4 +1,3 @@
-import importlib.util
 import sys
 import types
 from pathlib import Path
@@ -7,6 +6,12 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = REPO_ROOT / "apps" / "workers-py" / "src"
+sys.path.insert(0, str(SRC_DIR))
+
+from invplatform.domain import files as domain_files  # noqa: E402
+from invplatform.domain import pdf as domain_pdf  # noqa: E402
+from invplatform.domain import relevance as domain_relevance  # noqa: E402
 
 
 def _ensure_module(module_name: str) -> types.ModuleType:
@@ -22,7 +27,6 @@ def _ensure_module(module_name: str) -> types.ModuleType:
 
 
 def _stub_external_dependencies():
-    # Playwright (heavy dep) – provide no-op placeholders
     sync_api = _ensure_module("playwright.sync_api")
 
     class DummyTimeoutError(Exception):
@@ -41,7 +45,6 @@ def _stub_external_dependencies():
     sync_api.TimeoutError = DummyTimeoutError  # type: ignore[attr-defined]
     sync_api.sync_playwright = DummyManager()  # type: ignore[attr-defined]
 
-    # MSAL – stub PublicClientApplication
     msal_mod = _ensure_module("msal")
 
     class DummyPCA:
@@ -56,7 +59,6 @@ def _stub_external_dependencies():
 
     msal_mod.PublicClientApplication = DummyPCA  # type: ignore[attr-defined]
 
-    # Google API clients – supply minimal placeholders so import succeeds
     creds_mod = _ensure_module("google.oauth2.credentials")
 
     class DummyCredentials:
@@ -97,46 +99,36 @@ def _stub_external_dependencies():
 _stub_external_dependencies()
 
 
-def _load_module(name: str, relative_path: str):
-    spec = importlib.util.spec_from_file_location(name, REPO_ROOT / relative_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module {name} from {relative_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from invplatform.cli import gmail_invoice_finder as GMAIL  # noqa: E402
 
 
-GRAPH = _load_module("graph_invoice_finder", "graph_invoice_finder.v3.9.2.py")
-GMAIL = _load_module("gmail_invoice_finder", "gmail_invoice_finder.v1.0.py")
+def test_domain_relevance_positive_keyword():
+    assert domain_relevance.should_consider_message("חשבונית מס קבלה", "")
+    assert domain_relevance.should_consider_message("Invoice for services", "")
 
 
-def test_graph_should_consider_message_positive_keyword():
-    assert GRAPH.should_consider_message("חשבונית מס קבלה", "")
-    assert GRAPH.should_consider_message("Invoice for services", "")
+def test_domain_relevance_negative_filter():
+    assert not domain_relevance.should_consider_message("תלוש שכר יוני", "")
+    assert not domain_relevance.should_consider_message("Salary payment", "")
 
 
-def test_graph_should_consider_message_reject_negative_hint():
-    assert not GRAPH.should_consider_message("תלוש שכר יוני", "")
-    assert not GRAPH.should_consider_message("Salary payment", "")
-
-
-def test_graph_sanitize_filename_and_unique(tmp_path):
+def test_domain_files_unique_path(tmp_path):
     base_dir = tmp_path / "out"
     base_dir.mkdir()
 
-    first = GRAPH.ensure_unique_path(str(base_dir), "חשבונית:2025/06.pdf")
+    first = domain_files.ensure_unique_path(str(base_dir), "חשבונית:2025/06.pdf")
     Path(first).write_bytes(b"pdf")
-    second = GRAPH.ensure_unique_path(str(base_dir), "חשבונית:2025/06.pdf")
+    second = domain_files.ensure_unique_path(str(base_dir), "חשבונית:2025/06.pdf")
 
     assert first.endswith("חשבונית_2025_06.pdf")
     assert second.endswith("__2.pdf")
 
 
-def test_graph_pdf_confidence_ratio():
+def test_domain_pdf_confidence_ratio():
     stats = {"pos_hits": 2, "neg_hits": 1}
-    assert pytest.approx(GRAPH.pdf_confidence(stats)) == pytest.approx(2 / 3)
+    assert pytest.approx(domain_pdf.pdf_confidence(stats)) == pytest.approx(2 / 3)
     stats = {"pos_hits": 0, "neg_hits": 0}
-    assert GRAPH.pdf_confidence(stats) == 0.0
+    assert domain_pdf.pdf_confidence(stats) == 0.0
 
 
 def test_gmail_build_query_includes_keywords():
@@ -154,7 +146,7 @@ def test_gmail_build_query_without_excluding_sent():
     assert "-from:me" not in query
 
 
-def test_gmail_extract_links_deduplicates_and_captures(tmp_path):
+def test_gmail_extract_links_deduplicates_and_captures():
     pytest.importorskip("bs4")
     html = """
     <html>

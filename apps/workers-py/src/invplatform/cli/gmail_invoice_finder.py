@@ -26,7 +26,7 @@ gmail_invoice_finder.v1.0.py
 דוגמאות הרצה:
 --------------
 # בסיסי: טווח תאריכים, שמירה לתיקיית invoices_out
-python gmail_invoice_finder.v1.0.py \
+python -m invplatform.cli.gmail_invoice_finder \
   --start-date 2025-09-01 --end-date 2025-10-01 \
   --invoices-dir invoices_out \
   --verify \
@@ -35,7 +35,7 @@ python gmail_invoice_finder.v1.0.py \
   --download-report download_report_gmail.json
 
 # החרגת 'נשלח', הרצה ו־trace עבור בזק:
-python gmail_invoice_finder.v1.0.py \
+python -m invplatform.cli.gmail_invoice_finder \
   --start-date 2025-09-01 --end-date 2025-10-01 \
   --invoices-dir invoices_out \
   --exclude-sent \
@@ -43,7 +43,7 @@ python gmail_invoice_finder.v1.0.py \
   --bezeq-headful --bezeq-trace --bezeq-screenshots
 
 # חיפוש מותאם ידנית (יגבר על בניית השאילתה האוטומטית):
-python gmail_invoice_finder.v1.0.py \
+python -m invplatform.cli.gmail_invoice_finder \
   --gmail-query 'in:anywhere -in:sent -from:me after:2025/09/01 before:2025/10/01 (filename:pdf OR "חשבונית" OR invoice)' \
   --invoices-dir invoices_out --verify
 
@@ -53,20 +53,18 @@ python gmail_invoice_finder.v1.0.py \
 - הסקריפט מייצר quarantine/ לפריטים לא וודאיים אם ביקשת --verify ו/או לא עמדו בסף.
 """
 
+import argparse
+import base64
+import csv
+import datetime as dt
+import json
+import logging
 import os
 import re
 import sys
-import csv
-import json
 import time
-import base64
-import hashlib
-import argparse
-import logging
-import pathlib
-import datetime as dt
-from typing import Optional, List, Dict, Tuple, Set
-from urllib.parse import urlparse, parse_qs
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import parse_qs, urlparse
 
 # ==== Google / Gmail API ====
 from google.oauth2.credentials import Credentials
@@ -77,25 +75,25 @@ from googleapiclient.discovery import build
 import requests
 from bs4 import BeautifulSoup
 
-# PyMuPDF
-try:
-    import fitz
-
-    HAVE_PYMUPDF = True
-except Exception:
-    HAVE_PYMUPDF = False
-
 # Playwright (לבזק)
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright.sync_api import TimeoutError as PWTimeout, sync_playwright
+
+from ..domain import constants as domain_constants
+from ..domain import files as domain_files
+from ..domain import pdf as domain_pdf
+from ..domain import relevance as domain_relevance
 
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
 # --------------------------- Utilities ---------------------------
-def ensure_dir(p: str) -> str:
-    pathlib.Path(p).mkdir(parents=True, exist_ok=True)
-    return p
+ensure_dir = domain_files.ensure_dir
+sanitize_filename = domain_files.sanitize_filename
+short_id_tag = domain_files.short_msg_tag
+ensure_unique_path = domain_files.ensure_unique_path
+sha256_bytes = domain_files.sha256_bytes
+within_domain = domain_relevance.within_domain
 
 
 def now_utc_iso() -> str:
@@ -106,143 +104,20 @@ def now_stamp() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 
-def sanitize_filename(s: str, default: str = "invoice.pdf") -> str:
-    s = (s or "").strip()
-    s = re.sub(r'[\\/:*?"<>|]+', "_", s)
-    return s or default
-
-
-def short_id_tag(msg_id: str, n: int = 8) -> str:
-    s = re.sub(r"[^A-Za-z0-9]", "", msg_id or "")
-    return (s[-n:] if len(s) >= n else s) or "msg"
-
-
-def ensure_unique_path(
-    base_dir: str, wanted_name: str, tag: Optional[str] = None
-) -> str:
-    wanted_name = sanitize_filename(wanted_name)
-    stem, ext = os.path.splitext(wanted_name)
-    if not ext:
-        ext = ".pdf"
-    if tag:
-        stem = f"{stem}__{tag}"
-    cand = os.path.join(base_dir, f"{stem}{ext}")
-    i = 2
-    while os.path.exists(cand):
-        cand = os.path.join(base_dir, f"{stem}__{i}{ext}")
-        i += 1
-    return cand
-
-
-def sha256_bytes(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
-
-
-def within_domain(u: str, domains: List[str]) -> bool:
-    try:
-        host = urlparse(u).hostname or ""
-        return any(host.endswith(d) for d in domains)
-    except Exception:
-        return False
-
-
 # --------------------------- Keywords & heuristics ---------------------------
-HEB_POS = [
-    "חשבונית",
-    "חשבונית מס",
-    "חשבונית מס קבלה",
-    "קבלה",
-    "ארנונה",
-    "שובר תשלום",
-    "דרישת תשלום",
-    "אגרת",
-    "היטל",
-    "מספר נכס",
-]
-EN_POS = ["invoice", "tax invoice", "receipt", "bill"]
-
-HEB_NEG = [
-    "תלוש שכר",
-    "תלוש",
-    "משכורת",
-    "שכר",
-    "ברוטו",
-    "נטו",
-    "הפרשות פנסיה",
-    "שעות נוספות",
-]
-EN_NEG = [
-    "payslip",
-    "pay slip",
-    "salary",
-    "payroll",
-    "net pay",
-    "gross pay",
-    "employee",
-    "employer",
-]
-
-HEB_MUNICIPAL = ["ארנונה", "עיריית", "עיריה", "שובר תשלום", "רשות מקומית", "תאגיד מים"]
-
-TRUSTED_PROVIDERS = [
-    "myinvoice.bezeq.co.il",
-    "my.bezeq.co.il",
-    "bmy.bezeq.co.il",
-    "icount.co.il",
-    "greeninvoice.co.il",
-    "ezcount.co.il",
-    "tax.gov.il",
-    "gov.il",
-    "quickbooks.intuit.com",
-    "stripe.com",
-]
-
-
-def is_municipal_text(t: str) -> bool:
-    return any(k in (t or "") for k in HEB_MUNICIPAL)
-
-
-def body_has_negative(t: str) -> bool:
-    low = (t or "").lower()
-    return any(k in (t or "") for k in HEB_NEG) or any(k in low for k in EN_NEG)
-
-
-def body_has_positive(t: str) -> bool:
-    low = (t or "").lower()
-    return any(k in (t or "") for k in HEB_POS) or any(k in low for k in EN_POS)
+EN_POS = domain_constants.EN_POS
+HEB_POS = domain_constants.HEB_POS
+EN_NEG = domain_constants.EN_NEG
+HEB_NEG = domain_constants.HEB_NEG
+TRUSTED_PROVIDERS = domain_constants.TRUSTED_PROVIDERS
+is_municipal_text = domain_relevance.is_municipal_text
+body_has_negative = domain_relevance.body_has_negative
+body_has_positive = domain_relevance.body_has_positive
 
 
 # --------------------------- PDF verification ---------------------------
-def pdf_keyword_stats(path: str) -> Dict:
-    stats = {"pos_hits": 0, "neg_hits": 0, "pos_terms": [], "neg_terms": []}
-    if not HAVE_PYMUPDF:
-        return stats
-    try:
-        doc = fitz.open(path)
-        for page in doc:
-            text = page.get_text("text") or ""
-            low = text.lower()
-            for k in EN_POS:
-                if k in low:
-                    stats["pos_hits"] += 1
-                    stats["pos_terms"].append(k)
-            for k in HEB_POS:
-                if k in text:
-                    stats["pos_hits"] += 1
-                    stats["pos_terms"].append(k)
-            for k in EN_NEG:
-                if k in low:
-                    stats["neg_hits"] += 1
-                    stats["neg_terms"].append(k)
-            for k in HEB_NEG:
-                if k in text:
-                    stats["neg_hits"] += 1
-                    stats["neg_terms"].append(k)
-            if stats["pos_hits"] >= 3 or stats["neg_hits"] >= 1:
-                break
-    except Exception:
-        pass
-    return stats
+pdf_keyword_stats = domain_pdf.pdf_keyword_stats
+pdf_confidence = domain_pdf.pdf_confidence
 
 
 def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, Dict]:
@@ -255,9 +130,7 @@ def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, D
 
 # --------------------------- Gmail client ---------------------------
 class GmailClient:
-    def __init__(
-        self, credentials_path: str = "credentials.json", token_path: str = "token.json"
-    ):
+    def __init__(self, credentials_path: str = "credentials.json", token_path: str = "token.json"):
         self.creds = None
         if os.path.exists(token_path):
             self.creds = Credentials.from_authorized_user_file(token_path, SCOPES)
@@ -265,9 +138,7 @@ class GmailClient:
             if self.creds and self.creds.expired and self.creds.refresh_token:
                 self.creds.refresh(GReq())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    credentials_path, SCOPES
-                )
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
                 self.creds = flow.run_local_server(
                     host="localhost",
                     port=8080,
@@ -280,9 +151,7 @@ class GmailClient:
                 token.write(self.creds.to_json())
         self.svc = build("gmail", "v1", credentials=self.creds, cache_discovery=False)
 
-    def list_messages(
-        self, q: str, max_results: int = 500, include_spam_trash: bool = False
-    ):
+    def list_messages(self, q: str, max_results: int = 500, include_spam_trash: bool = False):
         user = "me"
         page_token = None
         fetched = 0
@@ -308,12 +177,7 @@ class GmailClient:
                 break
 
     def get_message(self, msg_id: str) -> Dict:
-        return (
-            self.svc.users()
-            .messages()
-            .get(userId="me", id=msg_id, format="full")
-            .execute()
-        )
+        return self.svc.users().messages().get(userId="me", id=msg_id, format="full").execute()
 
     def get_attachment(self, msg_id: str, att_id: str) -> bytes:
         res = (
@@ -382,9 +246,7 @@ def get_body_text(payload: dict) -> Tuple[str, str]:
         if not data:
             continue
         try:
-            raw = base64.urlsafe_b64decode(data.encode("utf-8")).decode(
-                "utf-8", errors="ignore"
-            )
+            raw = base64.urlsafe_b64decode(data.encode("utf-8")).decode("utf-8", errors="ignore")
         except Exception:
             continue
         if mime == "text/html":
@@ -477,9 +339,7 @@ def bezeq_fetch_with_api_sniff(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
             ),
-            extra_http_headers={
-                "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"
-            },
+            extra_http_headers={"Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"},
         )
         if keep_trace:
             context.tracing.start(screenshots=True, snapshots=True, sources=False)
@@ -488,21 +348,11 @@ def bezeq_fetch_with_api_sniff(
 
         def on_console(m):
             try:
-                t = (
-                    m.type()
-                    if callable(getattr(m, "type", None))
-                    else str(getattr(m, "type", ""))
-                )
-                x = (
-                    m.text()
-                    if callable(getattr(m, "text", None))
-                    else str(getattr(m, "text", ""))
-                )
+                t = m.type() if callable(getattr(m, "type", None)) else str(getattr(m, "type", ""))
+                x = m.text() if callable(getattr(m, "text", None)) else str(getattr(m, "text", ""))
                 note(f"console:{t}:{x}")
                 if "GetAttachedInvoiceById" in x:
-                    mm = re.search(
-                        r"https?://[^\s\"']+GetAttachedInvoiceById[^\s\"']+", x
-                    )
+                    mm = re.search(r"https?://[^\s\"']+GetAttachedInvoiceById[^\s\"']+", x)
                     if mm:
                         api_urls.append(mm.group(0))
             except Exception:
@@ -543,9 +393,7 @@ def bezeq_fetch_with_api_sniff(
                     q = parse_qs(urlparse(u).query)
                     inv_id = (q.get("InvoiceId") or [""])[0]
                     cd = resp.headers.get("content-disposition") or ""
-                    m = re.search(
-                        r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I
-                    )
+                    m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
                     if m:
                         name = sanitize_filename(m.group(1))
                         if not name.lower().endswith(".pdf"):
@@ -594,9 +442,7 @@ def bezeq_fetch_with_api_sniff(
 
         if keep_trace:
             try:
-                context.tracing.stop(
-                    path=os.path.join(out_dir, f"bezeq_trace_{now_stamp()}.zip")
-                )
+                context.tracing.stop(path=os.path.join(out_dir, f"bezeq_trace_{now_stamp()}.zip"))
             except Exception:
                 pass
         context.close()
@@ -627,18 +473,10 @@ def main():
     ap.add_argument("--credentials", default="credentials.json")
     ap.add_argument("--token", default="token.json")
 
-    ap.add_argument(
-        "--gmail-query", default=None, help="שאילתת Gmail מותאמת (עוקף בנייה אוטומטית)"
-    )
-    ap.add_argument(
-        "--start-date", required=False, help="YYYY-MM-DD (לשילוב בשאילתא הנבנית)"
-    )
-    ap.add_argument(
-        "--end-date", required=False, help="YYYY-MM-DD (לשילוב בשאילתא הנבנית)"
-    )
-    ap.add_argument(
-        "--exclude-sent", action="store_true", help="החרגת נשלח/ממני בשאילתת Gmail"
-    )
+    ap.add_argument("--gmail-query", default=None, help="שאילתת Gmail מותאמת (עוקף בנייה אוטומטית)")
+    ap.add_argument("--start-date", required=False, help="YYYY-MM-DD (לשילוב בשאילתא הנבנית)")
+    ap.add_argument("--end-date", required=False, help="YYYY-MM-DD (לשילוב בשאילתא הנבנית)")
+    ap.add_argument("--exclude-sent", action="store_true", help="החרגת נשלח/ממני בשאילתת Gmail")
 
     ap.add_argument("--invoices-dir", default="./invoices_out")
     ap.add_argument("--keep-quarantine", action="store_true")
@@ -652,22 +490,14 @@ def main():
     # Playwright / Bezeq
     ap.add_argument("--bezeq-headful", action="store_true")
     ap.add_argument("--bezeq-trace", action="store_true")
-    ap.add_argument(
-        "--bezeq-screenshots", action="store_true"
-    )  # לא בשימוש ישיר כאן, דגל עתידי
+    ap.add_argument("--bezeq-screenshots", action="store_true")  # לא בשימוש ישיר כאן, דגל עתידי
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.INFO, format="%(message)s"
-    )
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(message)s")
 
     inv_dir = ensure_dir(args.invoices_dir)
-    quarant_dir = (
-        ensure_dir(os.path.join(inv_dir, "quarantine"))
-        if args.keep_quarantine
-        else None
-    )
+    quarant_dir = ensure_dir(os.path.join(inv_dir, "quarantine")) if args.keep_quarantine else None
     tmp_dir = ensure_dir(os.path.join(inv_dir, "_tmp"))
 
     # בניית שאילתא
@@ -675,13 +505,9 @@ def main():
         query = args.gmail_query
     else:
         if not (args.start_date and args.end_date):
-            print(
-                "כשלא מספקים --gmail-query חובה לתת --start-date ו--end-date לבניית השאילתא."
-            )
+            print("כשלא מספקים --gmail-query חובה לתת --start-date ו--end-date לבניית השאילתא.")
             sys.exit(2)
-        query = build_gmail_query(
-            args.start_date, args.end_date, exclude_sent=args.exclude_sent
-        )
+        query = build_gmail_query(args.start_date, args.end_date, exclude_sent=args.exclude_sent)
 
     logging.info(f"Gmail query: {query}")
 
@@ -706,9 +532,7 @@ def main():
         subject = headers.get("subject", "")
         from_addr = headers.get("from", "")
         internal_ts = int(msg.get("internalDate", "0")) // 1000
-        received = (
-            dt.datetime.utcfromtimestamp(internal_ts).isoformat() if internal_ts else ""
-        )
+        received = dt.datetime.utcfromtimestamp(internal_ts).isoformat() if internal_ts else ""
         snippet = msg.get("snippet") or ""
 
         logging.info(f"[{idx}] {subject} | {from_addr} | {received}")
@@ -755,15 +579,11 @@ def main():
                 trusted_hint = False
                 ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                 if args.verify:
-                    ok, stats = decide_pdf_relevance(
-                        tmp_path, trusted_hint=trusted_hint
-                    )
+                    ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
 
                 if not ok:
                     if quarant_dir:
-                        out_q = ensure_unique_path(
-                            quarant_dir, filename or "file.pdf", tag=msg_tag
-                        )
+                        out_q = ensure_unique_path(quarant_dir, filename or "file.pdf", tag=msg_tag)
                         os.replace(tmp_path, out_q)
                         download_report.append(
                             {
@@ -788,9 +608,7 @@ def main():
                         )
                     continue
 
-                out_path = ensure_unique_path(
-                    inv_dir, filename or "invoice.pdf", tag=msg_tag
-                )
+                out_path = ensure_unique_path(inv_dir, filename or "invoice.pdf", tag=msg_tag)
                 os.replace(tmp_path, out_path)
                 seen_hashes.add(h)
                 download_report.append(
@@ -848,14 +666,12 @@ def main():
                     with open(tmp_path, "wb") as f:
                         f.write(blob)
 
-                    trusted_hint = within_domain(
-                        u, TRUSTED_PROVIDERS
-                    ) or is_municipal_text(subject + " " + snippet)
+                    trusted_hint = within_domain(u, TRUSTED_PROVIDERS) or is_municipal_text(
+                        subject + " " + snippet
+                    )
                     ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                     if args.verify:
-                        ok, stats = decide_pdf_relevance(
-                            tmp_path, trusted_hint=trusted_hint
-                        )
+                        ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
 
                     if not ok:
                         if quarant_dir:
@@ -911,9 +727,7 @@ def main():
                     break
 
                 # בזק – Flutter
-                if within_domain(
-                    u, ["myinvoice.bezeq.co.il", "my.bezeq.co.il", "bmy.bezeq.co.il"]
-                ):
+                if within_domain(u, ["myinvoice.bezeq.co.il", "my.bezeq.co.il", "bmy.bezeq.co.il"]):
                     out = bezeq_fetch_with_api_sniff(
                         url=u,
                         out_dir=inv_dir,
@@ -943,15 +757,11 @@ def main():
                         trusted_hint = True
                         ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                         if args.verify:
-                            ok, stats = decide_pdf_relevance(
-                                tmp_path, trusted_hint=trusted_hint
-                            )
+                            ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
 
                         if not ok:
                             if quarant_dir:
-                                out_q = ensure_unique_path(
-                                    quarant_dir, name, tag=msg_tag
-                                )
+                                out_q = ensure_unique_path(quarant_dir, name, tag=msg_tag)
                                 os.replace(tmp_path, out_q)
                                 download_report.append(
                                     {
@@ -1006,9 +816,7 @@ def main():
                         break
 
             if not any_saved and links:
-                rejected_rows.append(
-                    {"id": msg_id, "subject": subject, "reason": "links_no_pdf"}
-                )
+                rejected_rows.append({"id": msg_id, "subject": subject, "reason": "links_no_pdf"})
 
         if not any_saved:
             rejected_rows.append(
