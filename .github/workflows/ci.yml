@@ -31,3 +31,10 @@ jobs:
           pip install ruff pytest
           ruff check --fix .
           pytest -q
+
+      - name: Invoice finder heuristics tests
+        run: |
+          python -m venv .venv-invoice
+          . .venv-invoice/bin/activate
+          pip install -U pip pytest requests beautifulsoup4
+          pytest tests/test_invoice_finders.py

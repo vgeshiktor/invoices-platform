@@ -96,3 +96,11 @@ python archive/graph_invoice_finder.v3.5.2.py \
 ### Outlook Search Filters
 
 The files `search_filter_outlook.v1.json` and `search_filter_outlook.v2.json` capture Outlook portal saved searches that mirror the script heuristics (keyword mix, date windows). Importing them is useful when you want to eyeball results inside Outlook before running the automation end-to-end.
+
+## Running tests
+
+Lightweight confidence tests cover the keyword heuristics in the standalone Gmail/Graph invoice finders. To execute them (no live API dependencies required):
+
+```bash
+pytest tests/test_invoice_finders.py
+```
