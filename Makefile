@@ -30,13 +30,16 @@ PYTHONPATH_EXTRA := apps/workers-py/src
 START_DATE ?=
 END_DATE ?=
 
-GMAIL_INVOICES_DIR ?= invoices_out
+GMAIL_INVOICES_DIR ?= invoices_gmail
 GMAIL_EXTRA_ARGS ?=
 
 GRAPH_CLIENT_ID ?=
 GRAPH_AUTHORITY ?= consumers
 GRAPH_INVOICES_DIR ?= invoices_outlook
-GRAPH_EXTRA_ARGS ?=
+GRAPH_EXTRA_ARGS ?= --save-json invoices.json \
+	--save-csv invoices.csv \
+    --download-report download_report.json \
+	--explain --verify
 
 run-gmail: ## הרצת Gmail invoice finder (נדרש START_DATE ו-END_DATE)
 	@test -n "$(START_DATE)" || (echo "START_DATE is required. Example: make run-gmail START_DATE=2025-06-01 END_DATE=2025-07-01"; exit 1)

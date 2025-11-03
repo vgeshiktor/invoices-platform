@@ -22,7 +22,7 @@ graph_invoice_finder.v3.9.2.py
     playwright install chromium
 
 דוגמאות:
-    python -m invplatform.cli.graph_invoice_finder \
+    python graph_invoice_finder.v3.9.2.py \
       --client-id "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" \
       --authority consumers \
       --start-date 2025-09-01 --end-date 2025-10-01 \
@@ -34,7 +34,7 @@ graph_invoice_finder.v3.9.2.py
       --bezeq-trace --bezeq-screenshots
 
     # דיבוג מוגבר + חלון דפדפן ל-Flutter של בזק:
-    python -m invplatform.cli.graph_invoice_finder \
+    python graph_invoice_finder.v3.9.2.py \
       --client-id "..." --authority consumers \
       --start-date 2025-09-01 --end-date 2025-10-01 \
       --invoices-dir invoices_out \
@@ -45,9 +45,11 @@ graph_invoice_finder.v3.9.2.py
 import argparse
 import csv
 import datetime as dt
+import hashlib
 import json
 import logging
 import os
+import pathlib
 import re
 import sys
 import time
@@ -58,23 +60,22 @@ import msal
 import requests
 from bs4 import BeautifulSoup
 
+# PyMuPDF (pymupdf)
+try:
+    import fitz
+
+    HAVE_PYMUPDF = True
+except Exception:
+    HAVE_PYMUPDF = False
+
 from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright
 
-from ..domain import constants as domain_constants
-from ..domain import files as domain_files
-from ..domain import pdf as domain_pdf
-from ..domain import relevance as domain_relevance
-
 
 # ---------- Utils ----------
-ensure_dir = domain_files.ensure_dir
-sanitize_filename = domain_files.sanitize_filename
-short_msg_tag = domain_files.short_msg_tag
-ensure_unique_path = domain_files.ensure_unique_path
-sha256_bytes = domain_files.sha256_bytes
-keyword_in_text = domain_relevance.keyword_in_text
-within_domain = domain_relevance.within_domain
+def ensure_dir(p: str) -> str:
+    pathlib.Path(p).mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def now_utc_iso() -> str:
@@ -85,23 +86,177 @@ def now_stamp() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
 
 
+def sanitize_filename(name: str, default: str = "invoice.pdf") -> str:
+    name = re.sub(r'[\\/:*?"<>|]+', "_", (name or "").strip())
+    return name or default
+
+
+def short_msg_tag(msg_id: str, n: int = 8) -> str:
+    s = re.sub(r"[^A-Za-z0-9]", "", msg_id or "")
+    return (s[-n:] if len(s) >= n else s) or "msg"
+
+
+def ensure_unique_path(base_dir: str, wanted_name: str, tag: Optional[str] = None) -> str:
+    wanted_name = sanitize_filename(wanted_name)
+    stem, ext = os.path.splitext(wanted_name)
+    if not ext:
+        ext = ".pdf"
+    if tag:
+        stem = f"{stem}__{tag}"
+    candidate = os.path.join(base_dir, f"{stem}{ext}")
+    i = 2
+    while os.path.exists(candidate):
+        candidate = os.path.join(base_dir, f"{stem}__{i}{ext}")
+        i += 1
+    return candidate
+
+
+def sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
+_KEYWORD_PATTERNS: Dict[Tuple[str, bool], re.Pattern] = {}
+
+
+def keyword_in_text(text: str, term: str, ignore_case: bool = False) -> bool:
+    if not text or not term:
+        return False
+    key = (term, ignore_case)
+    pattern = _KEYWORD_PATTERNS.get(key)
+    if pattern is None:
+        flags = re.UNICODE
+        if ignore_case:
+            flags |= re.IGNORECASE
+        pattern = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", flags)
+        _KEYWORD_PATTERNS[key] = pattern
+    return bool(pattern.search(text))
+
+
+def within_domain(u: str, domains: List[str]) -> bool:
+    try:
+        host = urlparse(u).hostname or ""
+        return any(host.endswith(d) for d in domains)
+    except Exception:
+        return False
+
+
 # ---------- Keywords ----------
-EN_POS = domain_constants.EN_POS
-HEB_POS = domain_constants.HEB_POS
-EN_NEG = domain_constants.EN_NEG
-HEB_NEG = domain_constants.HEB_NEG
-TRUSTED_PROVIDERS = domain_constants.TRUSTED_PROVIDERS
-HEB_MUNICIPAL = domain_constants.HEB_MUNICIPAL
+HEB_POS = [
+    "חשבונית",
+    "חשבונית מס",
+    "חשבונית מס קבלה",
+    "קבלה",
+    "ארנונה",
+    "שובר תשלום",
+    "דרישת תשלום",
+    "אגרת",
+    "היטל",
+    "מספר נכס",
+]
+EN_POS = ["invoice", "tax invoice", "receipt", "bill"]  # 'statement' הוסר כדי לצמצם FP
+
+HEB_NEG = [
+    "תלוש שכר",
+    "תלוש",
+    "משכורת",
+    "שכר",
+    "ברוטו",
+    "נטו",
+    "הפרשות פנסיה",
+    "שעות נוספות",
+]
+EN_NEG = [
+    "payslip",
+    "pay slip",
+    "salary",
+    "payroll",
+    "net pay",
+    "gross pay",
+    "employee",
+    "employer",
+]
+
+HEB_MUNICIPAL = [
+    "ארנונה",
+    "עיריית",
+    "עיריה",
+    "שובר תשלום",
+    "רשות מקומית",
+    "תאגיד מים",
+    "מיתב",
+]
+
+TRUSTED_PROVIDERS = [
+    "myinvoice.bezeq.co.il",
+    "my.bezeq.co.il",
+    "bmy.bezeq.co.il",
+    "icount.co.il",
+    "greeninvoice.co.il",
+    "ezcount.co.il",
+    "tax.gov.il",
+    "gov.il",
+    "quickbooks.intuit.com",
+    "stripe.com",
+]
 
 
 # ---------- PDF verification ----------
-pdf_keyword_stats = domain_pdf.pdf_keyword_stats
-pdf_confidence = domain_pdf.pdf_confidence
+def pdf_keyword_stats(path: str) -> Dict:
+    stats = {"pos_hits": 0, "neg_hits": 0, "pos_terms": [], "neg_terms": []}
+    if not HAVE_PYMUPDF:
+        # ללא PyMuPDF – לא נחסום, רק נחזיר ניטרלי
+        return stats
+    try:
+        doc = fitz.open(path)
+        for page in doc:
+            text = page.get_text("text") or ""
+            # חיובי: עברית ואנגלית
+            for k in EN_POS:
+                if keyword_in_text(text, k, ignore_case=True):
+                    stats["pos_hits"] += 1
+                    stats["pos_terms"].append(k)
+            for k in HEB_POS:
+                if keyword_in_text(text, k):
+                    stats["pos_hits"] += 1
+                    stats["pos_terms"].append(k)
+            # שלילי:
+            for k in EN_NEG:
+                if keyword_in_text(text, k, ignore_case=True):
+                    stats["neg_hits"] += 1
+                    stats["neg_terms"].append(k)
+            for k in HEB_NEG:
+                if keyword_in_text(text, k):
+                    stats["neg_hits"] += 1
+                    stats["neg_terms"].append(k)
+            # נסתפק בקריאה חלקית
+            if stats["pos_hits"] >= 3 or stats["neg_hits"] >= 1:
+                break
+    except Exception:
+        pass
+    return stats
 
 
-is_municipal_text = domain_relevance.is_municipal_text
-body_has_negative = domain_relevance.body_has_negative
-body_has_positive = domain_relevance.body_has_positive
+def pdf_confidence(stats: Dict) -> float:
+    pos = int(stats.get("pos_hits", 0) or 0)
+    neg = int(stats.get("neg_hits", 0) or 0)
+    total = pos + neg
+    if total <= 0:
+        return 1.0 if pos > 0 else 0.0
+    return pos / total
+
+
+def is_municipal_text(t: str) -> bool:
+    return any(k in t for k in HEB_MUNICIPAL)
+
+
+def body_has_negative(t: str) -> bool:
+    low = t.lower()
+    return any(k in t for k in HEB_NEG) or any(k in low for k in EN_NEG)
+
+
+def body_has_positive(t: str) -> bool:
+    low = t.lower()
+    return any(k in t for k in HEB_POS) or any(k in low for k in EN_POS)
 
 
 # ---------- Graph client ----------
@@ -464,6 +619,16 @@ def main():
     quarant_dir = ensure_dir(os.path.join(inv_dir, "quarantine")) if args.keep_quarantine else None
     tmp_dir = ensure_dir(os.path.join(inv_dir, "_tmp"))
 
+    def tmp_pdf_path(msg_tag: str) -> str:
+        """Ensure the temp dir exists before writing."""
+        ensure_dir(tmp_dir)
+        return os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
+
+    def evaluate_pdf(tmp_path: str, trusted_hint: bool):
+        if args.verify or HAVE_PYMUPDF:
+            return decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+        return True, {"pos_hits": 1, "neg_hits": 0, "pos_terms": [], "neg_terms": []}
+
     try:
         start_dt = dt.datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
         end_dt = dt.datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
@@ -555,6 +720,12 @@ def main():
             if args.explain:
                 logging.info("    message_reject: %s", reason)
 
+        context_positive = body_has_positive(msg_context) or msg_trusted_hint
+        context_negative = body_has_negative(msg_context)
+        if context_negative and not context_positive:
+            record_rejection("negative_context")
+            continue
+
         # ---- A) Attachments ----
         atts = []
         if has_attachments:
@@ -602,15 +773,12 @@ def main():
                     record_candidate(candidate)
                     continue
                 # כתיבה זמנית
-                tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
+                tmp_path = tmp_pdf_path(msg_tag)
                 with open(tmp_path, "wb") as f:
                     f.write(blob)
 
-                trusted_hint = msg_trusted_hint  # הקשר המייל (למשל עירייה/מים)
-                ok = True
-                stats = {"pos_hits": 1, "neg_hits": 0, "pos_terms": [], "neg_terms": []}
-                if args.verify:
-                    ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+                trusted_hint = msg_trusted_hint or context_positive  # הקשר המייל (למשל עירייה/מים)
+                ok, stats = evaluate_pdf(tmp_path, trusted_hint=trusted_hint)
 
                 confidence = pdf_confidence(stats)
                 candidate.update({"stats": stats, "confidence": confidence})
@@ -748,7 +916,7 @@ def main():
                         record_candidate(candidate)
                         continue
                     # כתיבה זמנית + אימות
-                    tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
+                    tmp_path = tmp_pdf_path(msg_tag)
                     with open(tmp_path, "wb") as f:
                         f.write(blob)
 
@@ -756,16 +924,9 @@ def main():
                         within_domain(u, TRUSTED_PROVIDERS)
                         or msg_trusted_hint
                         or is_municipal_text(msg_context)
+                        or context_positive
                     )
-                    ok = True
-                    stats = {
-                        "pos_hits": 1,
-                        "neg_hits": 0,
-                        "pos_terms": [],
-                        "neg_terms": [],
-                    }
-                    if args.verify:
-                        ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+                    ok, stats = evaluate_pdf(tmp_path, trusted_hint=trusted_hint)
 
                     confidence = pdf_confidence(stats)
                     candidate.update(
@@ -896,20 +1057,12 @@ def main():
                             record_candidate(candidate)
                             continue
 
-                        tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
+                        tmp_path = tmp_pdf_path(msg_tag)
                         with open(tmp_path, "wb") as f:
                             f.write(blob)
 
                         trusted_hint = True  # בזק – ספק אמין
-                        ok = True
-                        stats = {
-                            "pos_hits": 1,
-                            "neg_hits": 0,
-                            "pos_terms": [],
-                            "neg_terms": [],
-                        }
-                        if args.verify:
-                            ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+                        ok, stats = evaluate_pdf(tmp_path, trusted_hint=trusted_hint)
 
                         confidence = pdf_confidence(stats)
                         candidate.update(
