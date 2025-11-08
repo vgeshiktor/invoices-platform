@@ -15,3 +15,12 @@ repos:
       - id: ruff        # Lint
         args: ["--fix"]
       - id: ruff-format # Format (Black-compatible)
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: bash -c "make test"
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -15,6 +15,7 @@ down:
 test:
 	$(MAKE) -C apps/api-go test
 	$(MAKE) -C apps/workers-py test
+	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m pytest tests
 
 lint:
 	$(MAKE) -C apps/api-go lint
