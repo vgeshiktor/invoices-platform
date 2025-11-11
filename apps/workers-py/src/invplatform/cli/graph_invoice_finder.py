@@ -263,7 +263,7 @@ def body_has_positive(t: str) -> bool:
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 
-class GraphClient:
+class GraphClient:  # pragma: no cover - requires live Graph API/MSAL
     def __init__(
         self,
         client_id: str,
@@ -401,7 +401,7 @@ def normalize_myinvoice_url(u: str) -> str:
     return s
 
 
-def bezeq_fetch_with_api_sniff(
+def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
     url: str,
     out_dir: str,
     headless: bool,
@@ -574,7 +574,7 @@ def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, D
 
 
 # ---------- Main ----------
-def main():
+def main():  # pragma: no cover - CLI entry point
     ap = argparse.ArgumentParser(
         description="Graph Invoice Finder v3.9.2 (exclude sent + strict relevance)"
     )

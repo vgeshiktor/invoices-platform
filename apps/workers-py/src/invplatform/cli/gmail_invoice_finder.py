@@ -137,7 +137,7 @@ def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, D
 
 
 # --------------------------- Gmail client ---------------------------
-class GmailClient:
+class GmailClient:  # pragma: no cover - requires live Google OAuth
     def __init__(self, credentials_path: str = "credentials.json", token_path: str = "token.json"):
         self.creds = None
         if os.path.exists(token_path):
@@ -326,9 +326,10 @@ def _decode_data_url(data_url: str) -> Optional[bytes]:
     if not m:
         return None
     try:
-        return base64.b64decode(m.group(2))
+        blob = base64.b64decode(m.group(2))
     except Exception:
         return None
+    return blob or None
 
 
 def sha256_file(path: str) -> Optional[str]:
@@ -336,8 +337,6 @@ def sha256_file(path: str) -> Optional[str]:
     try:
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(65536), b""):
-                if not chunk:
-                    break
                 h.update(chunk)
     except OSError:
         return None
@@ -427,7 +426,9 @@ def download_direct_pdf(
     return None
 
 
-def yes_fetch_with_browser(url: str, headless: bool, verbose: bool = False) -> Dict[str, object]:
+def yes_fetch_with_browser(  # pragma: no cover - requires real Playwright/browser
+    url: str, headless: bool, verbose: bool = False
+) -> Dict[str, object]:
     """Attempt to render YES invoice HTML and capture embedded PDF bytes."""
     res: Dict[str, object] = {"ok": False, "notes": []}
     try:
@@ -552,7 +553,7 @@ def normalize_myinvoice_url(u: str) -> str:
     return s
 
 
-def bezeq_fetch_with_api_sniff(
+def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network heavy
     url: str,
     out_dir: str,
     headless: bool,
@@ -715,7 +716,7 @@ def should_consider_message(subject: str, preview: str) -> bool:
 
 
 # --------------------------- Main ---------------------------
-def main():
+def main():  # pragma: no cover - CLI orchestration
     ap = argparse.ArgumentParser(description="Gmail Invoice Finder v1.0")
     ap.add_argument("--credentials", default="credentials.json")
     ap.add_argument("--token", default="token.json")
