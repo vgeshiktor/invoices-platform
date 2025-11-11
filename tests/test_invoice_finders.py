@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import sys
 import types
 from pathlib import Path
@@ -170,3 +172,41 @@ def test_gmail_extract_links_deduplicates_and_captures():
         "Visit https://example.com/invoice.pdf and https://example.com/invoice.pdf"
     )
     assert text_links == ["https://example.com/invoice.pdf"]
+
+
+def test_gmail_normalize_link_unwraps_google_redirect():
+    url = "https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Finv.pdf&sa=D"
+    assert GMAIL.normalize_link(url) == "https://example.com/inv.pdf"
+    assert (
+        GMAIL.normalize_link("https://example.com/file.pdf")
+        == "https://example.com/file.pdf"
+    )
+
+
+def test_gmail_decode_data_url_roundtrip():
+    payload = b"%PDF-1.7 stub"
+    data_url = f"data:application/pdf;base64,{base64.b64encode(payload).decode()} "
+    assert GMAIL._decode_data_url(data_url) == payload  # noqa: SLF001
+    assert GMAIL._decode_data_url("not-a-data-url") is None  # noqa: SLF001
+
+
+def test_gmail_load_existing_hash_index(tmp_path):
+    invoices_dir = tmp_path / "invoices"
+    (invoices_dir / "_tmp").mkdir(parents=True)
+    (invoices_dir / "quarantine").mkdir(parents=True)
+    (invoices_dir / "nested").mkdir(parents=True)
+
+    (invoices_dir / "a.pdf").write_bytes(b"A")
+    (invoices_dir / "nested" / "b.pdf").write_bytes(b"B")
+    # duplicate content, should not create new entry
+    (invoices_dir / "dup.pdf").write_bytes(b"A")
+    # skipped directories
+    (invoices_dir / "_tmp" / "skip.pdf").write_bytes(b"C")
+    (invoices_dir / "quarantine" / "skip.pdf").write_bytes(b"D")
+
+    index = GMAIL.load_existing_hash_index(str(invoices_dir))
+    assert len(index) == 2
+    digest_a = hashlib.sha256(b"A").hexdigest()
+    digest_b = hashlib.sha256(b"B").hexdigest()
+    assert digest_a in index and Path(index[digest_a]).name in {"a.pdf", "dup.pdf"}
+    assert digest_b in index and Path(index[digest_b]).name == "b.pdf"

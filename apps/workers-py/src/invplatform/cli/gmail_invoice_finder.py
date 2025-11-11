@@ -12,6 +12,7 @@ gmail_invoice_finder.v1.0.py
 - מניעת דריסה ו־hash de-dup
 - דוחות JSON/CSV + Download report
 - אפשרות להחריג תיקיית Sent
+- דגלי ניטור (--save-candidates/--save-nonmatches/--explain) כמו ב-graph_invoice_finder
 
 תלויות:
     pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
@@ -57,6 +58,7 @@ import argparse
 import base64
 import csv
 import datetime as dt
+import hashlib
 import json
 import logging
 import os
@@ -64,7 +66,7 @@ import re
 import sys
 import time
 from typing import Dict, List, Optional, Set, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 # ==== Google / Gmail API ====
 from google.oauth2.credentials import Credentials
@@ -83,6 +85,10 @@ from ..domain import files as domain_files
 from ..domain import pdf as domain_pdf
 from ..domain import relevance as domain_relevance
 
+DEFAULT_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+)
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -113,6 +119,8 @@ TRUSTED_PROVIDERS = domain_constants.TRUSTED_PROVIDERS
 is_municipal_text = domain_relevance.is_municipal_text
 body_has_negative = domain_relevance.body_has_negative
 body_has_positive = domain_relevance.body_has_positive
+
+YES_DOMAINS = ["yes.co.il", "www.yes.co.il", "svc.yes.co.il"]
 
 
 # --------------------------- PDF verification ---------------------------
@@ -164,6 +172,7 @@ class GmailClient:
                     q=q,
                     maxResults=min(500, max(1, max_results - fetched)),
                     includeSpamTrash=include_spam_trash,
+                    pageToken=page_token,
                 )
                 .execute()
             )
@@ -203,9 +212,29 @@ def build_gmail_query(start_date: str, end_date: str, exclude_sent: bool = True)
     # לא לכלול נשלח / ממני
     if exclude_sent:
         parts += ["-in:sent", "-from:me"]
-    # נרצה רק הודעות עם פוטנציאל חשבוניות:
-    # או שיש PDF מצורף, או שיש מילות מפתח בגוף/נושא
-    keyword_expr = '(filename:pdf OR subject:חשבונית OR subject:"חשבונית מס" OR subject:קבלה OR subject:ארנונה OR invoice OR receipt)'
+
+    # נרצה רק הודעות עם פוטנציאל חשבוניות: צרופות PDF או מילות מפתח (כולל הטיות עם ה' הידיעה)
+    def quote_term(term: str) -> str:
+        return f'"{term}"' if any(ch.isspace() for ch in term) else term
+
+    def subject_term(term: str) -> str:
+        inner = quote_term(term)
+        return f"subject:{inner}"
+
+    heb_terms: List[str] = []
+    for term in HEB_POS:
+        heb_terms.append(term)
+        if term and not term.startswith("ה"):
+            heb_terms.append(f"ה{term}")
+
+    keyword_terms: List[str] = ["filename:pdf"]
+    for term in heb_terms + EN_POS:
+        keyword_terms.append(subject_term(term))
+        keyword_terms.append(quote_term(term))
+
+    # הסר כפילויות ושמור על סדר
+    keyword_terms = list(dict.fromkeys(keyword_terms))
+    keyword_expr = "(" + " OR ".join(keyword_terms) + ")"
     parts.append(keyword_expr)
     # אפשר לא להגביל ל-in:inbox כדי לתפוס ארכיון וכו’:
     parts.append("in:anywhere")
@@ -275,30 +304,243 @@ def extract_links_from_text(text: str) -> List[str]:
     return list(dict.fromkeys(urls))
 
 
+def normalize_link(u: str) -> str:
+    if not u:
+        return u
+    try:
+        parsed = urlparse(u)
+    except Exception:
+        return u
+    host = (parsed.hostname or "").lower()
+    if host in {"www.google.com", "google.com"} and parsed.path.startswith("/url"):
+        qs = parse_qs(parsed.query)
+        for key in ("url", "q"):
+            target = qs.get(key)
+            if target:
+                return unquote(target[0])
+    return u
+
+
+def _decode_data_url(data_url: str) -> Optional[bytes]:
+    m = re.match(r"data:([^;]+);base64,(.+)", data_url, flags=re.I)
+    if not m:
+        return None
+    try:
+        return base64.b64decode(m.group(2))
+    except Exception:
+        return None
+
+
+def sha256_file(path: str) -> Optional[str]:
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                if not chunk:
+                    break
+                h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
+
+
+def load_existing_hash_index(inv_dir: str) -> Dict[str, str]:
+    index: Dict[str, str] = {}
+    if not os.path.isdir(inv_dir):
+        return index
+    for root, dirs, files in os.walk(inv_dir):
+        dirs[:] = [d for d in dirs if d not in {"_tmp", "quarantine"}]
+        for name in files:
+            if not name.lower().endswith(".pdf"):
+                continue
+            path = os.path.join(root, name)
+            digest = sha256_file(path)
+            if digest and digest not in index:
+                index[digest] = path
+    return index
+
+
 # --------------------------- Direct PDF via requests ---------------------------
 def download_direct_pdf(
-    url: str, referer: Optional[str] = None, ua: Optional[str] = None
+    url: str, referer: Optional[str] = None, ua: Optional[str] = None, verbose: bool = False
 ) -> Optional[Tuple[str, bytes]]:
-    headers = {}
-    if referer:
-        headers["Referer"] = referer
-    if ua:
-        headers["User-Agent"] = ua
-    try:
-        r = requests.get(url, headers=headers, timeout=30)
-        ct = (r.headers.get("Content-Type") or "").lower()
-        if r.status_code == 200 and ("pdf" in ct or url.lower().endswith(".pdf")):
-            name = "link_invoice.pdf"
-            cd = r.headers.get("Content-Disposition") or ""
-            m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
-            if m:
-                name = sanitize_filename(m.group(1))
-                if not name.lower().endswith(".pdf"):
-                    name += ".pdf"
-            return name, r.content
-    except Exception:
-        pass
+    ua = ua or DEFAULT_BROWSER_UA
+
+    def base_headers(include_referer: bool) -> Dict[str, str]:
+        hdrs: Dict[str, str] = {
+            "User-Agent": ua,
+            "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.8",
+            "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Connection": "close",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        if include_referer and referer:
+            hdrs["Referer"] = referer
+        host = (urlparse(url).hostname or "").lower()
+        if host.endswith("yes.co.il"):
+            hdrs.setdefault("Origin", "https://www.yes.co.il")
+            hdrs.setdefault("Sec-Fetch-Site", "cross-site")
+            hdrs.setdefault("Sec-Fetch-Mode", "navigate")
+            hdrs.setdefault("Sec-Fetch-Dest", "document")
+            hdrs.setdefault("Sec-Fetch-User", "?1")
+            hdrs.setdefault(
+                "sec-ch-ua",
+                '"Not/A)Brand";v="8", "Chromium";v="127", "Google Chrome";v="127"',
+            )
+            hdrs.setdefault("sec-ch-ua-platform", '"macOS"')
+            hdrs.setdefault("sec-ch-ua-mobile", "?0")
+        return hdrs
+
+    attempts = [True] if referer else []
+    attempts.append(False)
+
+    for include_ref in attempts:
+        try:
+            hdrs = base_headers(include_ref)
+            r = requests.get(url, headers=hdrs, timeout=30)
+            if verbose:
+                print(
+                    f"[direct_pdf] {url} ref={'yes' if include_ref and referer else 'no'} -> status={r.status_code} ct={r.headers.get('Content-Type')} size={len(r.content)}"
+                )
+            ct = (r.headers.get("Content-Type") or "").lower()
+            body = r.content
+            if r.status_code == 403 and include_ref:
+                # נסה שוב בלי referer
+                continue
+            if r.status_code == 200 and (
+                "pdf" in ct or url.lower().endswith(".pdf") or body[:4] == b"%PDF"
+            ):
+                name = "link_invoice.pdf"
+                cd = r.headers.get("Content-Disposition") or ""
+                m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
+                if m:
+                    name = sanitize_filename(m.group(1))
+                    if not name.lower().endswith(".pdf"):
+                        name += ".pdf"
+                return name, body
+        except Exception as e:
+            if verbose:
+                print(f"[direct_pdf] {url} error: {e}")
+            continue
     return None
+
+
+def yes_fetch_with_browser(url: str, headless: bool, verbose: bool = False) -> Dict[str, object]:
+    """Attempt to render YES invoice HTML and capture embedded PDF bytes."""
+    res: Dict[str, object] = {"ok": False, "notes": []}
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=headless, args=["--disable-blink-features=AutomationControlled"]
+            )
+            context = browser.new_context(
+                locale="he-IL",
+                user_agent=DEFAULT_BROWSER_UA,
+                extra_http_headers={"Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"},
+            )
+
+            pdf_blob: Optional[bytes] = None
+            pdf_name: Optional[str] = None
+
+            def handle_response(resp):
+                nonlocal pdf_blob, pdf_name
+                if pdf_blob is not None:
+                    return
+                ct = (resp.headers.get("content-type") or "").lower()
+                if "pdf" not in ct:
+                    return
+                try:
+                    body = resp.body()
+                except Exception as e:  # pragma: no cover
+                    res["notes"].append(f"resp_body_err:{e}")
+                    return
+                if body[:4] == b"%PDF":
+                    pdf_blob = body
+                    cd = resp.headers.get("content-disposition") or ""
+                    m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
+                    if m:
+                        pdf_name = sanitize_filename(m.group(1))
+                    else:
+                        pdf_name = sanitize_filename(
+                            os.path.basename(urlparse(resp.url).path) or ""
+                        )
+
+            context.on("response", handle_response)
+            page = context.new_page()
+            try:
+                if verbose:
+                    print(f"[yes_browser] navigate {url}")
+                page.goto(url, wait_until="networkidle")
+                try:
+                    page.wait_for_function(
+                        "() => { const el = document.querySelector('embed,iframe,object');"
+                        " return el && el.src && el.src !== 'about:blank'; }",
+                        timeout=5000,
+                    )
+                except PWTimeout:
+                    pass
+
+                if pdf_blob is None:
+                    locator = page.locator("embed, iframe, object")
+                    count = locator.count()
+                    for idx in range(count):
+                        handle = locator.nth(idx)
+                        src = (handle.get_attribute("src") or "").strip()
+                        if not src or src == "about:blank":
+                            continue
+                        candidate_name = handle.get_attribute("name") or ""
+                        blob: Optional[bytes] = None
+                        if src.startswith("data:"):
+                            blob = _decode_data_url(src)
+                        elif src.startswith("blob:"):
+                            try:
+                                arr = page.evaluate(
+                                    """async (blobUrl) => {
+                                        const resp = await fetch(blobUrl);
+                                        const buf = await resp.arrayBuffer();
+                                        return Array.from(new Uint8Array(buf));
+                                    }""",
+                                    src,
+                                )
+                                if arr:
+                                    blob = bytes(arr)
+                            except Exception as e:  # pragma: no cover
+                                res["notes"].append(f"blob_fetch_err:{e}")
+                        else:
+                            try:
+                                resp = context.request.get(src)
+                                data = resp.body()
+                                if data[:4] == b"%PDF":
+                                    blob = data
+                                    cd = resp.headers.get("content-disposition") or ""
+                                    m = re.search(
+                                        r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I
+                                    )
+                                    if m:
+                                        candidate_name = m.group(1)
+                            except Exception as e:  # pragma: no cover
+                                res["notes"].append(f"http_fetch_err:{e}")
+                        if blob:
+                            pdf_blob = blob
+                            pdf_name = sanitize_filename(candidate_name or os.path.basename(src))
+                            break
+
+                if pdf_blob:
+                    res.update(
+                        {"ok": True, "name": pdf_name or "yes_invoice.pdf", "blob": pdf_blob}
+                    )
+                else:
+                    res["notes"].append("pdf_not_found")
+            except Exception as e:  # pragma: no cover - Playwright runtime
+                res["notes"].append(f"browser_err:{e}")
+            finally:
+                context.close()
+                browser.close()
+    except Exception as e:  # pragma: no cover - Playwright runtime
+        res["notes"].append(f"browser_init_err:{e}")
+    return res
 
 
 # --------------------------- Bezeq (Playwright) ---------------------------
@@ -454,10 +696,15 @@ def bezeq_fetch_with_api_sniff(
 # --------------------------- Flow helpers ---------------------------
 def links_from_message(html: str, plain: str) -> List[str]:
     links = extract_links_from_html(html) + extract_links_from_text(plain)
-    # סינון בסיסי ללינקים “חשודים” שלא נפתח
-    links = [u for u in links if u.startswith("http")]
+    normalized: List[str] = []
+    for u in links:
+        if not u.startswith("http"):
+            continue
+        nu = normalize_link(u)
+        if nu and nu.startswith("http"):
+            normalized.append(nu)
     # ייחודיות
-    return list(dict.fromkeys(links))
+    return list(dict.fromkeys(normalized))
 
 
 def should_consider_message(subject: str, preview: str) -> bool:
@@ -483,12 +730,21 @@ def main():
     ap.add_argument("--download-report", default="download_report_gmail.json")
     ap.add_argument("--save-json", default=None)
     ap.add_argument("--save-csv", default=None)
+    ap.add_argument("--save-candidates", default=None, help="Dump all raw PDF candidates to JSON")
+    ap.add_argument(
+        "--save-nonmatches", default=None, help="Dump rejected message metadata to JSON"
+    )
     ap.add_argument("--max-messages", type=int, default=1000)
 
     ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--explain", action="store_true")
 
     # Playwright / Bezeq
-    ap.add_argument("--bezeq-headful", action="store_true")
+    ap.add_argument(
+        "--bezeq-headful",
+        action="store_true",
+        help="פתח חלון Playwright (בזק/YES) במקום ריצה headless",
+    )
     ap.add_argument("--bezeq-trace", action="store_true")
     ap.add_argument("--bezeq-screenshots", action="store_true")  # לא בשימוש ישיר כאן, דגל עתידי
     ap.add_argument("--debug", action="store_true")
@@ -516,7 +772,38 @@ def main():
     saved_rows: List[Dict] = []
     rejected_rows: List[Dict] = []
     download_report: List[Dict] = []
+    candidate_entries: List[Dict] = []
     seen_hashes: Set[str] = set()
+    hash_to_saved_path: Dict[str, str] = {}
+
+    existing_index = load_existing_hash_index(inv_dir)
+    if existing_index:
+        seen_hashes.update(existing_index.keys())
+        hash_to_saved_path.update(existing_index)
+
+    def record_candidate(entry: Dict) -> None:
+        if args.save_candidates:
+            candidate_entries.append(entry)
+        if args.explain:
+            label = entry.get("name") or entry.get("url") or entry.get("type")
+            decision = entry.get("decision") or ""
+            reason = entry.get("reason") or ""
+            confidence = entry.get("confidence")
+            parts = [decision]
+            if reason:
+                parts.append(reason)
+            if confidence is not None:
+                parts.append(f"conf={confidence:.2f}")
+            summary = ", ".join(p for p in parts if p)
+            logging.info(
+                "    candidate[%s] %s => %s", entry.get("type"), label, summary or "recorded"
+            )
+
+    def record_nonmatch(entry: Dict) -> None:
+        rejected_rows.append(entry)
+        if args.explain:
+            subj = entry.get("subject") or entry.get("id")
+            logging.info("    nonmatch[%s]: %s", subj, entry.get("reason"))
 
     idx = 0
     for msg_id in gc.list_messages(query, max_results=args.max_messages):
@@ -524,7 +811,7 @@ def main():
         try:
             msg = gc.get_message(msg_id)
         except Exception as e:
-            rejected_rows.append({"id": msg_id, "reason": f"get_message_fail:{e}"})
+            record_nonmatch({"id": msg_id, "reason": f"get_message_fail:{e}"})
             continue
 
         payload = msg.get("payload") or {}
@@ -544,6 +831,7 @@ def main():
 
         msg_tag = short_id_tag(msg_id)
         any_saved = False
+        message_rejected = False
 
         # ---- Attachments ----
         parts = extract_parts(payload)
@@ -556,20 +844,40 @@ def main():
                 continue
             if "pdf" not in mime and not filename.lower().endswith(".pdf"):
                 continue
+            candidate = {
+                "msg_id": msg_id,
+                "type": "attachment",
+                "name": filename,
+                "mimeType": mime,
+                "subject": subject,
+                "from": from_addr,
+                "receivedDateTime": received,
+            }
             try:
                 blob = gc.get_attachment(msg_id, att_id)
                 if not blob:
                     continue
                 h = sha256_bytes(blob)
+                candidate["sha256"] = h
                 if h in seen_hashes:
+                    dup_path = hash_to_saved_path.get(h)
                     download_report.append(
                         {
                             "msg_id": msg_id,
                             "type": "attachment",
                             "name": filename,
                             "skip": "duplicate_hash",
+                            **({"duplicate_of": dup_path} if dup_path else {}),
                         }
                     )
+                    candidate.update(
+                        {
+                            "decision": "skip",
+                            "reason": "duplicate_hash",
+                            **({"duplicate_of": dup_path} if dup_path else {}),
+                        }
+                    )
+                    record_candidate(candidate)
                     continue
 
                 tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
@@ -577,9 +885,14 @@ def main():
                     f.write(blob)
 
                 trusted_hint = False
-                ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                 if args.verify:
                     ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+                else:
+                    ok, stats = True, {"pos_hits": 1, "neg_hits": 0}
+                confidence = pdf_confidence(stats)
+                candidate.update(
+                    {"stats": stats, "confidence": confidence, "trusted_hint": trusted_hint}
+                )
 
                 if not ok:
                     if quarant_dir:
@@ -593,7 +906,11 @@ def main():
                                 "path": out_q,
                                 "ok": False,
                                 "stats": stats,
+                                "confidence": confidence,
                             }
+                        )
+                        candidate.update(
+                            {"decision": "quarantine", "reason": "verify_failed", "path": out_q}
                         )
                     else:
                         os.remove(tmp_path)
@@ -604,13 +921,17 @@ def main():
                                 "name": filename,
                                 "reject": "verify_failed",
                                 "stats": stats,
+                                "confidence": confidence,
                             }
                         )
+                        candidate.update({"decision": "reject", "reason": "verify_failed"})
+                    record_candidate(candidate)
                     continue
 
                 out_path = ensure_unique_path(inv_dir, filename or "invoice.pdf", tag=msg_tag)
                 os.replace(tmp_path, out_path)
                 seen_hashes.add(h)
+                hash_to_saved_path[h] = out_path
                 download_report.append(
                     {
                         "msg_id": msg_id,
@@ -619,8 +940,11 @@ def main():
                         "path": out_path,
                         "ok": True,
                         "stats": stats,
+                        "confidence": confidence,
                     }
                 )
+                candidate.update({"decision": "saved", "path": out_path})
+                record_candidate(candidate)
                 saved_rows.append(
                     {
                         "id": msg_id,
@@ -641,26 +965,65 @@ def main():
                         "reject": f"attach_download_fail:{e}",
                     }
                 )
+                candidate.update({"decision": "error", "reason": f"attach_download_fail:{e}"})
+                record_candidate(candidate)
 
         # ---- Links (אם לא ניצלנו מצורף) ----
         if not any_saved:
             html, plain = get_body_text(payload)
             links = links_from_message(html, plain)
             for u in links:
+                candidate = {
+                    "msg_id": msg_id,
+                    "type": "link_direct_pdf",
+                    "url": u,
+                    "subject": subject,
+                    "from": from_addr,
+                    "receivedDateTime": received,
+                }
+                is_bezeq = within_domain(
+                    u, ["myinvoice.bezeq.co.il", "my.bezeq.co.il", "bmy.bezeq.co.il"]
+                )
+                is_yes = within_domain(u, YES_DOMAINS)
                 # הורדה ישירה אם PDF
-                r = download_direct_pdf(u, referer=None, ua="Mozilla/5.0")
+                r = download_direct_pdf(
+                    u,
+                    referer="https://mail.google.com/",
+                    ua=DEFAULT_BROWSER_UA,
+                    verbose=args.debug,
+                )
+                if not r and is_yes:
+                    browser_out = yes_fetch_with_browser(
+                        u, headless=not args.bezeq_headful, verbose=args.debug
+                    )
+                    if browser_out.get("notes"):
+                        candidate["notes"] = browser_out.get("notes")
+                    if browser_out.get("ok"):
+                        candidate["type"] = "link_browser_pdf"
+                        r = (browser_out["name"], browser_out["blob"])
                 if r:
                     name, blob = r
                     h = sha256_bytes(blob)
+                    candidate.update({"name": name, "sha256": h})
                     if h in seen_hashes:
+                        dup_path = hash_to_saved_path.get(h)
                         download_report.append(
                             {
                                 "msg_id": msg_id,
                                 "type": "link",
                                 "url": u,
                                 "skip": "duplicate_hash",
+                                **({"duplicate_of": dup_path} if dup_path else {}),
                             }
                         )
+                        candidate.update(
+                            {
+                                "decision": "skip",
+                                "reason": "duplicate_hash",
+                                **({"duplicate_of": dup_path} if dup_path else {}),
+                            }
+                        )
+                        record_candidate(candidate)
                         continue
                     tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
                     with open(tmp_path, "wb") as f:
@@ -672,6 +1035,10 @@ def main():
                     ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                     if args.verify:
                         ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+                    confidence = pdf_confidence(stats)
+                    candidate.update(
+                        {"stats": stats, "confidence": confidence, "trusted_hint": trusted_hint}
+                    )
 
                     if not ok:
                         if quarant_dir:
@@ -685,7 +1052,11 @@ def main():
                                     "path": out_q,
                                     "ok": False,
                                     "stats": stats,
+                                    "confidence": confidence,
                                 }
+                            )
+                            candidate.update(
+                                {"decision": "quarantine", "reason": "verify_failed", "path": out_q}
                             )
                         else:
                             os.remove(tmp_path)
@@ -696,13 +1067,17 @@ def main():
                                     "url": u,
                                     "reject": "verify_failed",
                                     "stats": stats,
+                                    "confidence": confidence,
                                 }
                             )
+                            candidate.update({"decision": "reject", "reason": "verify_failed"})
+                        record_candidate(candidate)
                         continue
 
                     out_path = ensure_unique_path(inv_dir, name, tag=msg_tag)
                     os.replace(tmp_path, out_path)
                     seen_hashes.add(h)
+                    hash_to_saved_path[h] = out_path
                     download_report.append(
                         {
                             "msg_id": msg_id,
@@ -711,15 +1086,18 @@ def main():
                             "path": out_path,
                             "ok": True,
                             "stats": stats,
+                            "confidence": confidence,
                         }
                     )
+                    candidate.update({"decision": "saved", "path": out_path})
+                    record_candidate(candidate)
                     saved_rows.append(
                         {
                             "id": msg_id,
                             "subject": subject,
                             "from": from_addr,
                             "receivedDateTime": received,
-                            "source": "link_direct_pdf",
+                            "source": candidate.get("type", "link_direct_pdf"),
                             "path": out_path,
                         }
                     )
@@ -727,7 +1105,15 @@ def main():
                     break
 
                 # בזק – Flutter
-                if within_domain(u, ["myinvoice.bezeq.co.il", "my.bezeq.co.il", "bmy.bezeq.co.il"]):
+                if is_bezeq:
+                    candidate = {
+                        "msg_id": msg_id,
+                        "type": "bezeq_api",
+                        "url": u,
+                        "subject": subject,
+                        "from": from_addr,
+                        "receivedDateTime": received,
+                    }
                     out = bezeq_fetch_with_api_sniff(
                         url=u,
                         out_dir=inv_dir,
@@ -736,18 +1122,30 @@ def main():
                         take_screens=args.bezeq_screenshots,
                         verbose=args.debug,
                     )
+                    candidate["notes"] = out.get("notes", [])
                     if out.get("ok") and out.get("path"):
                         name, blob = out["path"]
                         h = sha256_bytes(blob)
+                        candidate["sha256"] = h
                         if h in seen_hashes:
+                            dup_path = hash_to_saved_path.get(h)
                             download_report.append(
                                 {
                                     "msg_id": msg_id,
                                     "type": "link",
                                     "url": u,
                                     "skip": "duplicate_hash",
+                                    **({"duplicate_of": dup_path} if dup_path else {}),
                                 }
                             )
+                            candidate.update(
+                                {
+                                    "decision": "skip",
+                                    "reason": "duplicate_hash",
+                                    **({"duplicate_of": dup_path} if dup_path else {}),
+                                }
+                            )
+                            record_candidate(candidate)
                             continue
 
                         tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
@@ -755,9 +1153,18 @@ def main():
                             f.write(blob)
 
                         trusted_hint = True
-                        ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                         if args.verify:
                             ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
+                        else:
+                            ok, stats = True, {"pos_hits": 1, "neg_hits": 0}
+                        confidence = pdf_confidence(stats)
+                        candidate.update(
+                            {
+                                "stats": stats,
+                                "confidence": confidence,
+                                "trusted_hint": trusted_hint,
+                            }
+                        )
 
                         if not ok:
                             if quarant_dir:
@@ -772,6 +1179,14 @@ def main():
                                         "ok": False,
                                         "stats": stats,
                                         "notes": out.get("notes", []),
+                                        "confidence": confidence,
+                                    }
+                                )
+                                candidate.update(
+                                    {
+                                        "decision": "quarantine",
+                                        "reason": "verify_failed",
+                                        "path": out_q,
                                     }
                                 )
                             else:
@@ -784,13 +1199,17 @@ def main():
                                         "reject": "verify_failed",
                                         "stats": stats,
                                         "notes": out.get("notes", []),
+                                        "confidence": confidence,
                                     }
                                 )
+                                candidate.update({"decision": "reject", "reason": "verify_failed"})
+                            record_candidate(candidate)
                             continue
 
                         out_path = ensure_unique_path(inv_dir, name, tag=msg_tag)
                         os.replace(tmp_path, out_path)
                         seen_hashes.add(h)
+                        hash_to_saved_path[h] = out_path
                         download_report.append(
                             {
                                 "msg_id": msg_id,
@@ -800,8 +1219,11 @@ def main():
                                 "ok": True,
                                 "stats": stats,
                                 "notes": out.get("notes", []),
+                                "confidence": confidence,
                             }
                         )
+                        candidate.update({"decision": "saved", "path": out_path})
+                        record_candidate(candidate)
                         saved_rows.append(
                             {
                                 "id": msg_id,
@@ -814,13 +1236,47 @@ def main():
                         )
                         any_saved = True
                         break
+                    else:
+                        if out.get("notes"):
+                            download_report.append(
+                                {
+                                    "msg_id": msg_id,
+                                    "type": "link",
+                                    "url": u,
+                                    "notes": out.get("notes", []),
+                                    "ok": False,
+                                    "reject": "bezeq_no_pdf",
+                                }
+                            )
+                        candidate.update({"decision": "no_pdf", "reason": "bezeq_no_pdf"})
+                        record_candidate(candidate)
+                    continue
+
+                candidate.update({"decision": "download_failed"})
+                record_candidate(candidate)
+                continue
 
             if not any_saved and links:
-                rejected_rows.append({"id": msg_id, "subject": subject, "reason": "links_no_pdf"})
+                record_nonmatch(
+                    {
+                        "id": msg_id,
+                        "subject": subject,
+                        "from": from_addr,
+                        "receivedDateTime": received,
+                        "reason": "links_no_pdf",
+                    }
+                )
+                message_rejected = True
 
-        if not any_saved:
-            rejected_rows.append(
-                {"id": msg_id, "subject": subject, "reason": "no_attach_no_pdf_links"}
+        if not any_saved and not message_rejected:
+            record_nonmatch(
+                {
+                    "id": msg_id,
+                    "subject": subject,
+                    "from": from_addr,
+                    "receivedDateTime": received,
+                    "reason": "no_attach_no_pdf_links",
+                }
             )
 
     # ----- Reports -----
@@ -847,6 +1303,16 @@ def main():
             for r in saved_rows:
                 w.writerow({k: r.get(k) for k in fields})
         print(f"Saved messages CSV → {args.save_csv}")
+
+    if args.save_candidates:
+        with open(args.save_candidates, "w", encoding="utf-8") as f:
+            json.dump(candidate_entries, f, ensure_ascii=False, indent=2)
+        print(f"Saved candidates → {args.save_candidates}")
+
+    if args.save_nonmatches:
+        with open(args.save_nonmatches, "w", encoding="utf-8") as f:
+            json.dump(rejected_rows, f, ensure_ascii=False, indent=2)
+        print(f"Saved nonmatches → {args.save_nonmatches}")
 
     print(f"Done. Saved {len(saved_rows)} invoices; Rejected {len(rejected_rows)}.")
 

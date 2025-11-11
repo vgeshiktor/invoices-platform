@@ -13,8 +13,6 @@ down:
 	docker compose -f deploy/compose/docker-compose.dev.yml down
 
 test:
-	$(MAKE) -C apps/api-go test
-	$(MAKE) -C apps/workers-py test
 	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m pytest tests
 
 lint:

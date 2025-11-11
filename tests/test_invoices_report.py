@@ -12,12 +12,25 @@ if str(SRC_DIR) not in sys.path:
 from invplatform.cli import invoices_report as report  # noqa: E402
 
 
-MUNICIPAL_PDF = REPO_ROOT / "invoices_outlook" / "333836120__8UhcAAAA.pdf"
+MUNICIPAL_PDF = None
+for candidate in [
+    REPO_ROOT / "invoices_outlook" / "333836120__8UhcAAAA.pdf",
+    REPO_ROOT / "invoices_outlook_09_2025" / "333836120__8UhcAAAA.pdf",
+    REPO_ROOT / "print_invoices" / "333836120__8UhcAAAA.pdf",
+]:
+    if candidate.exists():
+        MUNICIPAL_PDF = candidate
+        break
+
+pytestmark = pytest.mark.skipif(
+    MUNICIPAL_PDF is None,
+    reason="Municipal PDF fixture (333836120__8UhcAAAA.pdf) not found",
+)
 
 
 pytestmark = pytest.mark.skipif(
-    not report.HAVE_PYMUPDF,
-    reason="PyMuPDF fallback required to read glyph-based PDFs",
+    (MUNICIPAL_PDF is None) or (not report.HAVE_PYMUPDF),
+    reason="Municipal PDF fixture missing or PyMuPDF not available",
 )
 
 
@@ -37,7 +50,7 @@ def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
     argv = [
         "invoices_report",
         "--input-dir",
-        str(REPO_ROOT / "invoices_outlook"),
+        str(MUNICIPAL_PDF.parent),
         "--files",
         MUNICIPAL_PDF.name,
         "--json-output",

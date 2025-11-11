@@ -20,3 +20,7 @@ bezeq_html_dumps/*
 download_report*.json
 credentials.json
 token.json
+gmail_candidates.json
+gmail_candidates.csv
+gmail_regected.json
+invoices_report.csv
