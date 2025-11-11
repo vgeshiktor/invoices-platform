@@ -114,6 +114,39 @@ def select_amount(tokens: Iterable[str]) -> Amount:
     return candidates[0][0]
 
 
+def amount_near_markers(
+    text: str, patterns: Iterable[str], window: int = 120, prefer: str = "max"
+) -> Amount:
+    def extract_values(tokens: List[str]) -> List[Tuple[float, str]]:
+        values: List[Tuple[float, str]] = []
+        for tok in tokens:
+            amount = parse_number(tok)
+            if amount is not None and amount > 0:
+                values.append((amount, tok))
+        return values
+
+    def choose(values: List[Tuple[float, str]]) -> Amount:
+        if not values:
+            return None
+        decimals = [val for val in values if "." in val[1] or "," in val[1]]
+        pool = decimals if decimals else values
+        amounts = [val for val, _ in pool]
+        if prefer == "min":
+            return min(amounts)
+        return max(amounts)
+
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.MULTILINE):
+            tail = text[match.end() : match.end() + window]
+            head = text[max(0, match.start() - window) : match.start()]
+            values = extract_values(re.findall(r"[\d.,]+", tail))
+            values += extract_values(re.findall(r"[\d.,]+", head))
+            amount = choose(values)
+            if amount is not None:
+                return amount
+    return None
+
+
 def needs_fallback_text(text: str) -> bool:
     if not text:
         return True
@@ -319,6 +352,8 @@ def find_amount_before_marker(
             amount = select_amount(tokens[::-1]) if tokens else None
             if amount is not None:
                 return amount
+            if prefer_inline:
+                continue
             for lookback in range(1, 4):
                 if idx - lookback >= 0:
                     candidate = lines[idx - lookback]
@@ -377,9 +412,9 @@ def infer_totals(
             prefix = f"[debug][{label}] " if label else "[debug] "
             print(prefix + msg)
 
-    total = find_amount_before_marker(lines, 'םלוש כ"הס')
+    total = find_amount_before_marker(lines, 'םלוש כ"הס', prefer_inline=True)
     if total is None:
-        total = find_amount_before_marker(lines, 'םולשתל כ"הס')
+        total = find_amount_before_marker(lines, 'םולשתל כ"הס', prefer_inline=True)
     base_before_vat = find_amount_before_marker(lines, 'מ"עמ ינפל', prefer_inline=True)
     base_candidates = numeric_values_near_marker(lines, 'מ"עמ ינפל')
     vat = find_amount_before_marker(lines, 'לע מ"עמ')
@@ -401,6 +436,30 @@ def infer_totals(
         match = re.search(r"סה.?\"?כ.?[:\-]?\s*([\d.,]+)", text)
         if match:
             total = parse_number(match.group(1))
+    if total is None:
+        patterns = [
+            r"סה.?\"?כ.? ?לתשלום[^\d]*([\d.,]+)",
+            r"([\d.,]+)\s+סה.?\"?כ.? ?לתשלום",
+            r"סה.?\"?כ.? ?לתשלום(?:.|\n){0,40}?([\d.,]+)",
+            r"כ.?\"?הס[^\n]{0,40}?םולשתל[^\n]{0,40}?ח.?\"?ש[^\n]{0,40}?מ\"?עמ[^\d]*([\d.,]+)",
+            r"([\d.,]+)\s+מ\"?עמ[^\n]{0,40}?ח.?\"?ש[^\n]{0,40}?םולשתל[^\n]{0,40}?כ.?\"?הס",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.MULTILINE | re.DOTALL)
+            if match:
+                total = parse_number(match.group(1))
+                if total is not None:
+                    break
+    if total is None:
+        total = amount_near_markers(
+            text,
+            [
+                r"סה.?\"?כ.? ?לתשלום",
+                r"כ.?\"?הס[^\n]{0,40}?םולשתל[^\n]{0,40}?מ\"?עמ",
+                r"ח.?\"?ש[^\n]{0,20}?םולשתל",
+            ],
+            prefer="max",
+        )
     if total is None:
         match = re.search(
             r"סה.?\"?כ.? ?יגבה[^:]*:\s*([0-9,\.\s]+?)(?:\n|$)",
@@ -447,6 +506,28 @@ def infer_totals(
     dbg(f"total after heuristics={total}, base_before_vat={base_before_vat}")
 
     if vat is None:
+        vat_patterns = [
+            r"סה.?\"?כ.? ?מע\"?מ[^\d]*([\d.,]+)",
+            r"([\d.,]+)\s+סה.?\"?כ.? ?מע\"?מ",
+            r"מ\"?עמ[^\n]{0,30}?כ.?\"?הס[^\d]*([\d.,]+)",
+            r"([\d.,]+)\s+כ.?\"?הס[^\n]{0,30}?מ\"?עמ",
+        ]
+        for pattern in vat_patterns:
+            match = re.search(pattern, text, flags=re.MULTILINE | re.DOTALL)
+            if match:
+                vat = parse_number(match.group(1))
+                if vat is not None:
+                    break
+    if vat is None:
+        vat = amount_near_markers(
+            text,
+            [
+                r"סה.?\"?כ.? ?מע\"?מ",
+                r"מ\"?עמ[^\n]{0,30}?כ.?\"?הס",
+            ],
+            prefer="min",
+        )
+    if vat is None:
         for line in lines:
             if 'מ"עמ' in line:
                 if 'מ"עמל' in line and "₪" not in line and "%" not in line:
@@ -474,6 +555,15 @@ def infer_totals(
 
     if vat is not None and total is not None and vat > total:
         vat = None
+    if vat is None:
+        vat = amount_near_markers(
+            text,
+            [
+                r"סה.?\"?כ.? ?מע\"?מ",
+                r"מ\"?עמ[^\n]{0,30}?כ.?\"?הס",
+            ],
+            prefer="min",
+        )
 
     if (
         vat is None
