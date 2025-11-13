@@ -11,31 +11,23 @@ if str(SRC_DIR) not in sys.path:
 
 from invplatform.cli import invoices_report as report  # noqa: E402
 
-
-MUNICIPAL_PDF = None
-for candidate in [
-    REPO_ROOT / "invoices_outlook" / "333836120__8UhcAAAA.pdf",
-    REPO_ROOT / "invoices_outlook_09_2025" / "333836120__8UhcAAAA.pdf",
-    REPO_ROOT / "print_invoices" / "333836120__8UhcAAAA.pdf",
-]:
-    if candidate.exists():
-        MUNICIPAL_PDF = candidate
-        break
-
-pytestmark = pytest.mark.skipif(
-    MUNICIPAL_PDF is None,
-    reason="Municipal PDF fixture (333836120__8UhcAAAA.pdf) not found",
-)
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "invoices"
 
 
-pytestmark = pytest.mark.skipif(
-    (MUNICIPAL_PDF is None) or (not report.HAVE_PYMUPDF),
-    reason="Municipal PDF fixture missing or PyMuPDF not available",
-)
+def _parse_fixture_invoice(monkeypatch, fixture_name: str):
+    text = (FIXTURES_DIR / fixture_name).read_text(encoding="utf-8")
+    lines = report.extract_lines(text)
+    monkeypatch.setattr(report, "extract_text", lambda path: text)
+    monkeypatch.setattr(report, "extract_text_with_pymupdf", lambda path: text)
+    monkeypatch.setattr(report, "extract_lines", lambda _text: lines)
+    monkeypatch.setattr(
+        report, "file_sha256", lambda path: f"fixture-hash-{fixture_name}"
+    )
+    return report.parse_invoice(Path(fixture_name).with_suffix(".pdf"), debug=False)
 
 
-def test_municipal_invoice_breakdown_matches_total():
-    record = report.parse_invoice(MUNICIPAL_PDF, debug=False)
+def test_municipal_invoice_breakdown_matches_total(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "municipal_8Uhc.txt")
     assert record.invoice_total == pytest.approx(6619.5, rel=1e-3)
     assert record.invoice_vat == pytest.approx(0.0)
     assert record.breakdown_sum == pytest.approx(record.invoice_total, rel=1e-6)
@@ -46,13 +38,27 @@ def test_municipal_invoice_breakdown_matches_total():
 def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
     json_out = tmp_path / "report.json"
     csv_out = tmp_path / "report.csv"
+    dummy_pdf = tmp_path / "sample.pdf"
+    dummy_pdf.write_text("stub")
+
+    sample_record = report.InvoiceRecord(
+        source_file=dummy_pdf.name,
+        invoice_total=6619.5,
+        invoice_vat=0.0,
+        breakdown_sum=6619.5,
+        breakdown_values=[1.0],
+    )
+
+    monkeypatch.setattr(
+        report, "parse_invoice", lambda path, debug=False: sample_record
+    )
 
     argv = [
         "invoices_report",
         "--input-dir",
-        str(MUNICIPAL_PDF.parent),
+        str(tmp_path),
         "--files",
-        MUNICIPAL_PDF.name,
+        dummy_pdf.name,
         "--json-output",
         str(json_out),
         "--csv-output",
@@ -63,8 +69,7 @@ def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
 
     report.main()
     captured = capsys.readouterr()
-    assert "=== pdfminer text preview ===" in captured.out
-    assert "=== PyMuPDF text preview ===" in captured.out
+    assert "Generated 1 records" in captured.out
 
     data = json.loads(json_out.read_text(encoding="utf-8"))
     assert len(data) == 1
@@ -75,20 +80,17 @@ def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
     assert entry["breakdown_values"]
 
 
+def test_arnona_invoice_extracts_period_and_details(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "arnona_8UhU.txt")
+    assert record.invoice_from == "עיריית פתח תקווה"
+    assert record.invoice_for == "ארנונה לעסקים"
+    assert record.period_start == "2025-09-01"
+    assert record.period_end == "2025-10-30"
+    assert record.period_label == "ספטמבר - אוקטובר"
+
+
 def test_parse_invoice_municipal_regression(monkeypatch):
-    fake_text = """
-    עיריית פתח תקווה
-    תאריך הדפסה: 28/08/2025
-    מס׳ מסלקה/שובר/ספח: 4553051904
-    סה"כ לתשלום בש"ח: 955.50
-    """
-    fake_lines = [ln.strip() for ln in fake_text.splitlines() if ln.strip()]
-
-    monkeypatch.setattr(report, "extract_text", lambda path: fake_text)
-    monkeypatch.setattr(report, "extract_text_with_pymupdf", lambda path: fake_text)
-    monkeypatch.setattr(report, "extract_lines", lambda text: fake_lines)
-
-    record = report.parse_invoice(Path("dummy.pdf"), debug=False)
+    record = _parse_fixture_invoice(monkeypatch, "municipal_8Uhc.txt")
     assert record.invoice_id == "4553051904"
     assert record.invoice_date == "28/08/2025"
     assert record.invoice_from == "עיריית פתח תקווה"

@@ -11,6 +11,8 @@ dist/
 **/.vscode
 .token_cache.bin
 invoices*
+!tests/fixtures/invoices
+!tests/fixtures/invoices/*
 !apps/workers-py/src/invplatform/cli/invoices_report.py
 invoice_messages_*.csv
 invoice_messages_*.json

@@ -12,6 +12,10 @@ if str(SRC_DIR) not in sys.path:
 
 from invplatform.cli import invoices_report as report  # noqa: E402
 
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "invoices"
+ARNONA_TEXT = (FIXTURES_DIR / "arnona_8UhU.txt").read_text(encoding="utf-8")
+MUNICIPAL_TEXT = (FIXTURES_DIR / "municipal_8Uhc.txt").read_text(encoding="utf-8")
+
 
 def test_invoice_record_to_csv_row_formats_numbers():
     record = report.InvoiceRecord(
@@ -198,23 +202,41 @@ def test_file_sha256(tmp_path):
     assert digest == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 
-def test_extract_period_info_supports_ranges_and_bilingual_labels():
-    text = "תקופה: 01/09/2025 - 31/10/2025 לתשלום\n2025 אוקטובר-ספטמבר"
+def test_extract_period_info_supports_ranges_and_bilingual_labels_text_sample():
+    text = (
+        "31/10/2025- ו30/09/2025- הוראת הקבע בחשבונך בבנק תחויב בשני תשלומים\n"
+        "2025 אוקטובר-ספטמבר"
+    )
     start, end, label = report.extract_period_info(text)
     assert start == "2025-09-01"
-    assert end == "2025-10-31"
-    assert label in {"2025-09-01 - 2025-10-31", "ספטמבר - אוקטובר"}
+    assert end == "2025-10-30"
+    assert label == "ספטמבר - אוקטובר"
 
 
-def test_infer_invoice_date_fallback_grabs_first_numeric():
-    text = "אישור חיוב 31/10/2025 ללא תאריך מפורש"
-    assert report.infer_invoice_date(text) == "31/10/2025"
+def test_infer_invoice_date_fallback_grabs_first_numeric_text_sample():
+    text = ARNONA_TEXT.replace("תאריך הדפסה:", "תאריך מדומה:")
+    assert report.infer_invoice_date(text) == "01/09/2025"
 
 
-def test_infer_invoice_from_municipal_text():
-    lines = ["DB-102671-T80958", "פתח תקווה"]
-    text = "ברכות מעיריית פתח תקווה"
-    assert report.infer_invoice_from(lines, text) == "עיריית פתח תקווה"
+def test_infer_invoice_from_municipal_text_text_sample():
+    lines = report.extract_lines(MUNICIPAL_TEXT)[:5]
+    assert report.infer_invoice_from(lines, MUNICIPAL_TEXT) == "עיריית פתח תקווה"
+
+
+def test_extract_period_info_supports_ranges_and_bilingual_labels_fixture():
+    start, end, label = report.extract_period_info(ARNONA_TEXT)
+    assert start == "2025-09-01"
+    assert end == "2025-10-30"
+    assert label == "ספטמבר - אוקטובר"
+
+
+def test_infer_invoice_date_fallback_grabs_first_numeric_fixture():
+    assert report.infer_invoice_date(ARNONA_TEXT) == "01/09/2025"
+
+
+def test_infer_invoice_from_municipal_text_fixture():
+    lines = report.extract_lines(MUNICIPAL_TEXT)[:5]
+    assert report.infer_invoice_from(lines, MUNICIPAL_TEXT) == "עיריית פתח תקווה"
 
 
 def test_generate_report_and_writers(tmp_path, monkeypatch):

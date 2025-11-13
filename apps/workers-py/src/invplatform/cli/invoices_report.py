@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, asdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -177,6 +177,21 @@ MONTH_NAME_MAP = {
     "dec": 12,
 }
 
+MONTH_LABELS_HE = {
+    1: "ינואר",
+    2: "פברואר",
+    3: "מרץ",
+    4: "אפריל",
+    5: "מאי",
+    6: "יוני",
+    7: "יולי",
+    8: "אוגוסט",
+    9: "ספטמבר",
+    10: "אוקטובר",
+    11: "נובמבר",
+    12: "דצמבר",
+}
+
 
 def normalize_date_token(token: str, default_day: Optional[int] = None) -> Optional[str]:
     if not token:
@@ -221,6 +236,30 @@ def normalize_date_token(token: str, default_day: Optional[int] = None) -> Optio
 def extract_period_info(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     if not text:
         return None, None, None
+    autopay_segment = None
+    autopay_match = re.search(r"((?:\d{2}/\d{2}/\d{4}).{0,40}?){2,}הוראת הקבע", text)
+    if autopay_match:
+        autopay_segment = autopay_match.group(0)
+    if autopay_segment:
+        date_tokens = re.findall(r"\d{2}/\d{2}/\d{4}", autopay_segment)
+        if len(date_tokens) >= 2:
+            parsed_dates = []
+            for token in date_tokens:
+                normalized = normalize_date_token(token)
+                if normalized:
+                    parsed_dates.append(datetime.strptime(normalized, "%Y-%m-%d").date())
+            if len(parsed_dates) >= 2:
+                parsed_dates.sort()
+                start_base = parsed_dates[0]
+                end_autopay = parsed_dates[-1]
+                start = start_base.replace(day=1)
+                end = end_autopay - timedelta(days=1)
+                if end < start:
+                    end = end_autopay
+                start_label = MONTH_LABELS_HE.get(start.month, start.strftime("%B"))
+                end_label = MONTH_LABELS_HE.get(end.month, end.strftime("%B"))
+                label = f"{start_label} - {end_label}"
+                return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), label
     range_pattern = re.search(
         r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\s*[-–]\s*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})",
         text,
@@ -483,6 +522,10 @@ def normalize_invoice_for_value(raw: Optional[str]) -> Optional[str]:
         year = match.group(1)
         if desc:
             cleaned = f"{desc} {year}"
+    if "ארנונה לעסקים" in cleaned:
+        return "ארנונה לעסקים"
+    if "ארנונה" in cleaned:
+        return "ארנונה"
     return cleaned or None
 
 
@@ -638,7 +681,7 @@ def sum_numeric_block(
     return (total if found else None, values)
 
 
-def infer_invoice_for(lines: List[str]) -> Optional[str]:
+def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     if ":םיטרפ" in " ".join(lines):
         try:
             start = lines.index(":םיטרפ")
@@ -653,21 +696,44 @@ def infer_invoice_for(lines: List[str]) -> Optional[str]:
                     collected.append(ln)
             if collected:
                 return " | ".join(collected[:5])
+    for idx, line in enumerate(lines):
+        if "פירוט החיוב" in line or "פירוט החיובים" in line:
+            tail = normalize_invoice_for_value(
+                line.split("פירוט החיוב", 1)[-1]
+                if "פירוט החיוב" in line
+                else line.split("פירוט החיובים", 1)[-1]
+            )
+            if tail and "נכס" not in tail:
+                return tail
+            for lookahead in range(1, 8):
+                if idx + lookahead < len(lines):
+                    raw_line = lines[idx + lookahead].strip()
+                    skip_markers = [
+                        'סה"כ',
+                        "סהכ",
+                        "תיאור",
+                        "כתובת",
+                        "מס' זיהוי",
+                        "מספר זיהוי",
+                        "מס'",
+                    ]
+                    if any(marker in raw_line for marker in skip_markers):
+                        continue
+                    candidate = normalize_invoice_for_value(raw_line)
+                    if candidate:
+                        return candidate
     for line in lines:
         if " עבור " in line or " - " in line:
             if len(line) < 200:
+                if re.search(r"\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}", line):
+                    continue
                 normalized = normalize_invoice_for_value(line)
                 return normalized or line
-    for idx, line in enumerate(lines):
-        if "פירוט החיוב" in line:
-            tail = normalize_invoice_for_value(line.split("פירוט החיוב", 1)[-1])
-            if tail:
-                return tail
-            for lookahead in range(1, 4):
-                if idx + lookahead < len(lines):
-                    candidate = normalize_invoice_for_value(lines[idx + lookahead].strip())
-                    if candidate:
-                        return candidate
+    if text:
+        if "ארנונה לעסקים" in text:
+            return "ארנונה לעסקים"
+        if "ארנונה" in text:
+            return "ארנונה"
     return None
 
 
@@ -1019,7 +1085,7 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
     if invoice_from and len(invoice_from) > 120:
         invoice_from = invoice_from[:117] + "..."
     record.invoice_from = invoice_from
-    record.invoice_for = infer_invoice_for(lines)
+    record.invoice_for = infer_invoice_for(lines, text)
     lines_pdfminer = extract_lines(text_pdfminer)
     totals = infer_totals(
         lines,
