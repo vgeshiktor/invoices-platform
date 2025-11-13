@@ -94,3 +94,21 @@ def test_parse_invoice_municipal_regression(monkeypatch):
     assert record.invoice_id == "4553051904"
     assert record.invoice_date == "28/08/2025"
     assert record.invoice_from == "עיריית פתח תקווה"
+
+
+def test_rami_levy_invoice_from_detected(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "rami_levy_RAMIPDF.txt")
+    assert record.invoice_from == "רמי לוי תקשורת"
+    assert not record.municipal
+    assert record.category == "communication"
+    assert record.category_rule and record.category_rule.startswith("vendor:")
+
+
+def test_ravkav_invoice_parsing(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "ravkav_topup.txt")
+    assert record.invoice_total == pytest.approx(10.0, rel=1e-3)
+    assert record.invoice_vat == pytest.approx(1.53, rel=1e-3)
+    assert record.invoice_for == "רב-קו - טעינה"
+    assert record.vat_rate == pytest.approx(18.0, rel=1e-3)
+    assert record.category == "transportation"
+    assert record.category_rule and record.category_rule.startswith("vendor:")

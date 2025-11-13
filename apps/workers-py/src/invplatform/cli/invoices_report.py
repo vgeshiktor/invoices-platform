@@ -30,6 +30,41 @@ except ModuleNotFoundError:
 
 Amount = Optional[float]
 
+KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (("יול ימר", "רמי לוי תקשורת"),)
+
+PETAH_TIKVA_KEYWORDS: Tuple[str, ...] = ("פתח תק", "הווקת חתפ")
+PETAH_TIKVA_MUNICIPAL_MARKERS: Tuple[str, ...] = (
+    "עיריית",
+    "עריית",
+    "עירייה",
+    "עיריה",
+    "ערייה",
+    "עריה",
+    "עירית",
+    "ערית",
+    "העירייה",
+    "העיריה",
+    "תיעיר",
+    "תיעירת",
+    "רשות מקומית",
+)
+
+PUBLIC_TRANSPORT_HEBREW_MARKERS: Tuple[str, ...] = (
+    "תירוביצ הרובחת",
+    "תירוביצה הרובחת",
+    "תירוביצה הרובחתה",
+    "התחבורה הציבורית",
+    "וק-בר",
+    "רב-קו",
+)
+PUBLIC_TRANSPORT_LATIN_MARKERS: Tuple[str, ...] = (
+    "ravpass",
+    "rav-kav",
+    "ravkav",
+    "rav kav",
+)
+PUBLIC_TRANSPORT_INVOICE_FOR = "רב-קו - טעינה"
+
 
 @dataclass
 class InvoiceRecord:
@@ -351,9 +386,46 @@ def extract_reference_numbers(text: str) -> List[str]:
 
 CATEGORY_RULES: List[Tuple[str, float, List[str], List[str]]] = [
     (
+        "transportation",
+        0.95,
+        [
+            "תירוביצ הרובחת",
+            "תירוביצה הרובחת",
+            "התחבורה הציבורית",
+            "רב-קו",
+            "וק-בר",
+            "ravpass",
+            "rav-kav",
+            "ravkav",
+            "rav kav",
+        ],
+        [
+            "תחבורה ציבורית",
+            "ravpass",
+            "rav-kav",
+            "bus",
+            "train",
+            "light rail",
+            "travel card",
+        ],
+    ),
+    (
         "communication",
         1.0,
-        ["בזק", "bezeq", "cellcom", "partner", "hot", "yes", "סטינג", "stingtv"],
+        [
+            "בזק",
+            "bezeq",
+            "cellcom",
+            "partner",
+            "hot",
+            "yes",
+            "סטינג",
+            "stingtv",
+            "רמי לוי",
+            "רמי לוי תקשורת",
+            "rami levy",
+            "rami-levy",
+        ],
         ["תקשורת", "אינטרנט", "internet", "fiber", "broadband"],
     ),
     (
@@ -595,6 +667,32 @@ def infer_invoice_date(text: str) -> Optional[str]:
     return None
 
 
+def detect_known_vendor(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    for marker, label in KNOWN_VENDOR_MARKERS:
+        if marker in text:
+            return label
+    return None
+
+
+def has_public_transport_marker(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(marker in text for marker in PUBLIC_TRANSPORT_HEBREW_MARKERS):
+        return True
+    return any(marker in lowered for marker in PUBLIC_TRANSPORT_LATIN_MARKERS)
+
+
+def looks_like_petah_tikva_municipality(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    if not any(marker in text for marker in PETAH_TIKVA_KEYWORDS):
+        return False
+    return any(marker in text for marker in PETAH_TIKVA_MUNICIPAL_MARKERS)
+
+
 def infer_invoice_from(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     candidate: Optional[str] = None
     for line in lines:
@@ -610,12 +708,15 @@ def infer_invoice_from(lines: List[str], text: Optional[str] = None) -> Optional
             if re.search(r"[א-תA-Za-z]", line):
                 candidate = line
                 break
+    vendor = detect_known_vendor(text)
+    if vendor:
+        return vendor
     if text:
         match = re.search(r"ע[יר]יית\s+[^\n]{2,40}", text)
         if match:
             result = match.group(0).strip().replace("עריית", "עיריית")
             return result
-        if ("פתח תק" in text or "הווקת חתפ" in text) and ("עיר" in text or "רשות" in text):
+        if looks_like_petah_tikva_municipality(text):
             return "עיריית פתח תקווה"
     return candidate
 
@@ -682,6 +783,8 @@ def sum_numeric_block(
 
 
 def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
+    if has_public_transport_marker(text):
+        return PUBLIC_TRANSPORT_INVOICE_FOR
     if ":םיטרפ" in " ".join(lines):
         try:
             start = lines.index(":םיטרפ")
@@ -798,6 +901,23 @@ def vat_rate_estimate(total: Optional[float], vat: Optional[float]) -> Optional[
     return round((vat / base) * 100, 2)
 
 
+def extract_vat_rate_from_text(text: Optional[str]) -> Optional[float]:
+    if not text:
+        return None
+    patterns = [
+        r"([\d.,]+)\s*%[^\n]{0,15}?מ\"?עמ",
+        r"מ\"?עמ[^%\d]{0,15}?([\d.,]+)\s*%",
+        r"VAT[^%\d]{0,15}?([\d.,]+)\s*%",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            value = parse_number(match.group(1))
+            if value is not None:
+                return round(value, 2)
+    return None
+
+
 def infer_totals(
     lines: List[str],
     text: str,
@@ -820,10 +940,11 @@ def infer_totals(
     if vat is None:
         vat = find_amount_before_marker(lines, 'מ"עמ ')
     vat_candidates = numeric_values_near_marker(lines, 'לע מ"עמ')
+    explicit_vat_rate = extract_vat_rate_from_text(text)
     dbg(
         f"initial total={total}, base_before_vat={base_before_vat}, "
         f"base_candidates={base_candidates}, vat_initial={vat}, "
-        f"vat_candidates={vat_candidates}"
+        f"vat_candidates={vat_candidates}, explicit_vat_rate={explicit_vat_rate}"
     )
 
     if total is None:
@@ -887,6 +1008,12 @@ def infer_totals(
         match = re.search(r"סה.?\"?כ.? ?יגבה[^0-9]+([\d.,]+)", text)
         if match:
             total = parse_number(match.group(1))
+    if total is None:
+        matches = re.findall(r"₪\s*([\d.,]+)\s*[:\-]?\s*כ[\"״']?הס", text)
+        amounts = [parse_number(token) for token in matches]
+        numeric = [val for val in amounts if val is not None]
+        if numeric:
+            total = max(numeric)
     currency_tokens = re.findall(r"₪\s*([\d.,]+)", text)
     if total is None:
         total = select_amount(currency_tokens[::-1])
@@ -1036,7 +1163,9 @@ def infer_totals(
     return {
         "invoice_total": total,
         "invoice_vat": vat,
-        "vat_rate": vat_rate_estimate(total, vat),
+        "vat_rate": explicit_vat_rate
+        if explicit_vat_rate is not None
+        else vat_rate_estimate(total, vat),
         "municipal": is_municipal,
         "breakdown_sum": block_sum,
         "breakdown_values": breakdown_values,
