@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt run-gmail run-graph
+.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -13,7 +13,20 @@ down:
 	docker compose -f deploy/compose/docker-compose.dev.yml down
 
 test:
-	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m pytest tests
+	@if $(PYTHON) -c "import coverage" > /dev/null 2>&1; then \
+		echo "Running pytest with coverage..."; \
+		PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m coverage run -m pytest tests && \
+		$(PYTHON) -m coverage report --show-missing; \
+	else \
+		echo "coverage module not found for $(PYTHON); attempting installation..."; \
+		if $(PYTHON) -m pip install --quiet coverage; then \
+			PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m coverage run -m pytest tests && \
+			$(PYTHON) -m coverage report --show-missing; \
+		else \
+			echo "Failed to install coverage, running pytest without coverage."; \
+			PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m pytest tests; \
+		fi \
+	fi
 
 lint:
 	$(MAKE) -C apps/api-go lint
@@ -40,6 +53,11 @@ GRAPH_EXTRA_ARGS ?= --save-json invoices.json \
     --download-report download_report.json \
 	--explain --verify
 
+REPORT_INPUT_DIR ?= invoices_outlook
+REPORT_JSON_OUTPUT ?= invoice_report.json
+REPORT_CSV_OUTPUT ?= invoice_report.csv
+REPORT_EXTRA_ARGS ?=
+
 run-gmail: ## הרצת Gmail invoice finder (נדרש START_DATE ו-END_DATE)
 	@test -n "$(START_DATE)" || (echo "START_DATE is required. Example: make run-gmail START_DATE=2025-06-01 END_DATE=2025-07-01"; exit 1)
 	@test -n "$(END_DATE)" || (echo "END_DATE is required. Example: make run-gmail START_DATE=2025-06-01 END_DATE=2025-07-01"; exit 1)
@@ -60,3 +78,10 @@ run-graph: ## הרצת Outlook/Graph invoice finder (נדרש START_DATE, END_DA
 		--end-date $(END_DATE) \
 		--invoices-dir $(GRAPH_INVOICES_DIR) \
 		$(GRAPH_EXTRA_ARGS)
+
+run-report: ## Generate invoice report JSON/CSV from downloaded PDFs
+	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m invplatform.cli.invoices_report \
+		--input-dir $(REPORT_INPUT_DIR) \
+		--json-output $(REPORT_JSON_OUTPUT) \
+		--csv-output $(REPORT_CSV_OUTPUT) \
+		$(REPORT_EXTRA_ARGS)

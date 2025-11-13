@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import calendar
 import csv
+import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass, asdict
+from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -40,6 +44,20 @@ class InvoiceRecord:
     notes: Optional[str] = None
     breakdown_sum: Amount = None
     breakdown_values: Optional[List[float]] = None
+    base_before_vat: Amount = None
+    vat_rate: Optional[float] = None
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    period_label: Optional[str] = None
+    due_date: Optional[str] = None
+    category: Optional[str] = None
+    category_confidence: Optional[float] = None
+    category_rule: Optional[str] = None
+    reference_numbers: Optional[List[str]] = None
+    data_source: Optional[str] = None
+    parse_confidence: Optional[float] = None
+    municipal: Optional[bool] = None
+    duplicate_hash: Optional[str] = None
 
     def to_csv_row(self, fields: Sequence[str]) -> List[str]:
         row = []
@@ -48,6 +66,10 @@ class InvoiceRecord:
             value = data.get(field)
             if isinstance(value, float):
                 row.append(f"{value:.2f}")
+            elif isinstance(value, bool):
+                row.append("true" if value else "false")
+            elif isinstance(value, (list, dict)):
+                row.append(json.dumps(value, ensure_ascii=False))
             elif value is None:
                 row.append("")
             else:
@@ -112,6 +134,262 @@ def select_amount(tokens: Iterable[str]) -> Amount:
         if amount >= 10:
             return amount
     return candidates[0][0]
+
+
+MONTH_NAME_MAP = {
+    "ינואר": 1,
+    "פברואר": 2,
+    "מרץ": 3,
+    "מרס": 3,
+    "אפריל": 4,
+    "מאי": 5,
+    "יוני": 6,
+    "יולי": 7,
+    "אוגוסט": 8,
+    "ספטמבר": 9,
+    "ספטמבער": 9,
+    "אוקטובר": 10,
+    "נובמבר": 11,
+    "דצמבר": 12,
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sept": 9,
+    "sep": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def normalize_date_token(token: str, default_day: Optional[int] = None) -> Optional[str]:
+    if not token:
+        return None
+    candidate = (
+        token.strip().replace("\\", "-").replace("/", "-").replace(".", "-").replace(",", "-")
+    )
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d-%m-%y", "%m-%d-%Y", "%d-%b-%Y", "%d-%b-%y"):
+        try:
+            dt = datetime.strptime(candidate, fmt)
+            if dt.year < 100:
+                dt = dt.replace(year=2000 + dt.year)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    # month-year patterns
+    m = re.match(r"(\d{4})-(\d{1,2})$", candidate)
+    if m:
+        year = int(m.group(1))
+        month = int(m.group(2))
+        day = default_day or 1
+        day = min(day, calendar.monthrange(year, month)[1])
+        return date(year, month, day).strftime("%Y-%m-%d")
+    m = re.match(r"(\d{1,2})-(\d{4})$", candidate)
+    if m:
+        month = int(m.group(1))
+        year = int(m.group(2))
+        day = default_day or 1
+        day = min(day, calendar.monthrange(year, month)[1])
+        return date(year, month, day).strftime("%Y-%m-%d")
+    lowered = candidate.lower()
+    parts = lowered.split()
+    if len(parts) == 2 and parts[0] in MONTH_NAME_MAP and parts[1].isdigit():
+        month = MONTH_NAME_MAP[parts[0]]
+        year = int(parts[1])
+        day = default_day or 1
+        day = min(day, calendar.monthrange(year, month)[1])
+        return date(year, month, day).strftime("%Y-%m-%d")
+    return None
+
+
+def extract_period_info(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    if not text:
+        return None, None, None
+    range_pattern = re.search(
+        r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\s*[-–]\s*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})",
+        text,
+    )
+    if range_pattern:
+        start = normalize_date_token(range_pattern.group(1))
+        end = normalize_date_token(range_pattern.group(2))
+        label = f"{start} - {end}" if start and end else None
+        return start, end, label
+    bilingual_pattern = re.search(r"(\d{4})\s+([א-ת]+)\s*[-–]\s*([א-ת]+)", text)
+    if bilingual_pattern:
+        year = int(bilingual_pattern.group(1))
+        month_a = MONTH_NAME_MAP.get(bilingual_pattern.group(2).lower())
+        month_b = MONTH_NAME_MAP.get(bilingual_pattern.group(3).lower())
+        if month_a and month_b:
+            start = date(year, month_a, 1)
+            end = date(year, month_b, calendar.monthrange(year, month_b)[1])
+            label = f"{bilingual_pattern.group(3)} - {bilingual_pattern.group(2)}"
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), label
+    month_year_pattern = re.search(
+        r"(?:תקופה|billing|statement|month|חודש)\D*([A-Za-zא-ת]+)\s+(\d{4})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if month_year_pattern:
+        month_name = month_year_pattern.group(1).lower()
+        year = int(month_year_pattern.group(2))
+        month = MONTH_NAME_MAP.get(month_name)
+        if month:
+            start_date = date(year, month, 1)
+            end_date = date(year, month, calendar.monthrange(year, month)[1])
+            return (
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+                f"{start_date:%Y-%m} ({month_year_pattern.group(1)} {year})",
+            )
+    return None, None, None
+    bilingual_pattern = re.search(r"(\d{4})\s+([א-ת]+)\s*[-–]\s*([א-ת]+)", text)
+    if bilingual_pattern:
+        year = int(bilingual_pattern.group(1))
+        month_a = MONTH_NAME_MAP.get(bilingual_pattern.group(2).lower())
+        month_b = MONTH_NAME_MAP.get(bilingual_pattern.group(3).lower())
+        if month_a and month_b:
+            start = date(year, month_a, 1)
+            end = date(year, month_b, calendar.monthrange(year, month_b)[1])
+            label = f"{bilingual_pattern.group(2)} - {bilingual_pattern.group(3)}"
+            return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), label
+
+
+def extract_due_date(text: str) -> Optional[str]:
+    if not text:
+        return None
+    patterns = [
+        r"(?:Due Date|Payment Due|לתשלום עד|מועד תשלום|תאריך אחרון לתשלום)\D{0,15}([0-9./-]{6,10})",
+        r"מועד אחרון[:\s]+([0-9./-]{6,10})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            normalized = normalize_date_token(match.group(1))
+            if normalized:
+                return normalized
+    return None
+
+
+def extract_reference_numbers(text: str) -> List[str]:
+    if not text:
+        return []
+    patterns = [
+        r"(?:PO|P\.O\.|Purchase Order)[\s#:=-]*([A-Z0-9-]{4,})",
+        r"מספר\s+(?:הזמנה|לקוח|חוזה|עסקה)[\s#:=-]*([0-9-]{4,})",
+        r"(?:Customer ID|Account Number)[\s#:=-]*([A-Z0-9-]{4,})",
+    ]
+    refs: List[str] = []
+    for pattern in patterns:
+        refs.extend(re.findall(pattern, text, flags=re.IGNORECASE))
+    seen: Dict[str, bool] = {}
+    ordered: List[str] = []
+    for ref in refs:
+        key = ref.strip()
+        if not key or key in seen:
+            continue
+        seen[key] = True
+        ordered.append(key)
+        if len(ordered) >= 5:
+            break
+    return ordered
+
+
+CATEGORY_RULES: List[Tuple[str, float, List[str], List[str]]] = [
+    (
+        "communication",
+        1.0,
+        ["בזק", "bezeq", "cellcom", "partner", "hot", "yes", "סטינג", "stingtv"],
+        ["תקשורת", "אינטרנט", "internet", "fiber", "broadband"],
+    ),
+    (
+        "utilities",
+        0.9,
+        ["חשמל", "חברת החשמל", "מים", "תאגיד מים", "ארנונה", "city", "municipality"],
+        ["bill", "utility"],
+    ),
+    (
+        "software_saas",
+        0.8,
+        ["google", "microsoft", "aws", "stripe", "notion", "slack"],
+        ["subscription", "license"],
+    ),
+    ("finance", 0.7, ["visa", "mastercard", "amex", "isracard"], ["כרטיס אשראי"]),
+    ("services", 0.6, [], ["שירות", "service", "support"]),
+]
+
+
+def classify_invoice(
+    text: str, supplier: Optional[str], is_municipal: bool
+) -> Tuple[Optional[str], Optional[float], Optional[str]]:
+    if is_municipal:
+        return "municipal_tax", 1.0, "municipal_flag"
+    text_lower = (text or "").lower()
+    supplier_lower = (supplier or "").lower()
+    for category, weight, vendor_keys, keyword_hits in CATEGORY_RULES:
+        for vendor_key in vendor_keys:
+            if vendor_key.lower() in supplier_lower:
+                return category, weight, f"vendor:{vendor_key}"
+        for keyword in keyword_hits:
+            if keyword.lower() in text_lower:
+                return category, weight * 0.85, f"keyword:{keyword}"
+    return None, None, None
+
+
+def compute_parse_confidence(record: InvoiceRecord) -> float:
+    confidence = 0.4
+    if record.invoice_total is not None:
+        confidence += 0.25
+    if record.invoice_vat is not None:
+        confidence += 0.1
+    if record.breakdown_sum and record.invoice_total:
+        if abs(record.breakdown_sum - record.invoice_total) <= 1.0:
+            confidence += 0.15
+    if record.period_start or record.period_end:
+        confidence += 0.05
+    if record.reference_numbers:
+        confidence += 0.05
+    if record.category:
+        confidence += 0.05
+    return min(confidence, 0.99)
+
+
+def file_sha256(path: Path) -> Optional[str]:
+    try:
+        h = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def configure_pdfminer_logging(debug: bool) -> None:
+    level = logging.DEBUG if debug else logging.ERROR
+    for name in (
+        "pdfminer",
+        "pdfminer.pdfinterp",
+        "pdfminer.pdfdocument",
+        "pdfminer.converter",
+        "pdfminer.pdfpage",
+    ):
+        logging.getLogger(name).setLevel(level)
 
 
 def amount_near_markers(
@@ -191,6 +469,23 @@ def search_patterns(patterns: Iterable[str], text: str) -> Optional[str]:
     return None
 
 
+def normalize_invoice_for_value(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    cleaned = raw.strip().strip(":\"'").strip()
+    cleaned = re.sub(r"^[\d\s'\"`.,-]+", "", cleaned)
+    cleaned = cleaned.strip()
+    if not cleaned or not re.search(r"[A-Za-zא-ת]", cleaned):
+        return None
+    match = re.search(r"מס-?\s*(\d{4})\s+([א-תA-Za-z\s\"']{2,})", cleaned)
+    if match:
+        desc = match.group(2).strip()
+        year = match.group(1)
+        if desc:
+            cleaned = f"{desc} {year}"
+    return cleaned or None
+
+
 def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
     candidates: List[Tuple[int, str]] = []
 
@@ -207,6 +502,8 @@ def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
         (r"(\d{4,})\s*רפסמ\s*קיתב\s*מ\"עמ", 1),
         (r"(\d{4,})\s+רפסמ", 2),
         (r"מספר\s+(\d{4,})", 2),
+        (r"מס.?['׳]?\s*מסלקה/שובר/ספח[:\s]+(\d{4,})", 0),
+        (r"מסלקה/שובר/ספח[:\s]+(\d{4,})", 1),
     ]
     for pattern, priority in pattern_defs:
         for match in re.finditer(pattern, text):
@@ -225,6 +522,13 @@ def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
                     for val in prev:
                         add_candidate(val, 3)
                     break
+    if not candidates:
+        for line in lines[:60]:
+            for token in re.findall(r"\b\d{8,12}\b", line):
+                add_candidate(token, 5)
+    if not candidates and text:
+        for token in re.findall(r"\b\d{8,12}\b", text):
+            add_candidate(token, 6)
 
     if candidates:
         candidates.sort(key=lambda item: (item[0], -len(item[1]), item[1]))
@@ -237,22 +541,40 @@ def infer_invoice_date(text: str) -> Optional[str]:
         r"(\d{2}/\d{2}/\d{4})\s*:ךיראת",
         r"תאריך\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})",
         r"Date\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})",
+        r"תאריך\s*הדפסה\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})",
     ]
-    return search_patterns(patterns, text)
+    value = search_patterns(patterns, text)
+    if value:
+        return value
+    match = re.search(r"(\d{2}/\d{2}/\d{4})", text)
+    if match:
+        return match.group(1)
+    return None
 
 
-def infer_invoice_from(lines: List[str]) -> Optional[str]:
+def infer_invoice_from(lines: List[str], text: Optional[str] = None) -> Optional[str]:
+    candidate: Optional[str] = None
     for line in lines:
         if 'מ"עב' in line or 'בע"מ' in line or "Ltd" in line or "חברה" in line:
-            return line
-    for line in lines[:15]:
-        if "www" in line or "@" in line or "cid:" in line:
-            continue
-        if line.isdigit():
-            continue
-        if re.search(r"[א-תA-Za-z]", line):
-            return line
-    return None
+            candidate = line
+            break
+    if candidate is None:
+        for line in lines[:15]:
+            if "www" in line or "@" in line or "cid:" in line:
+                continue
+            if line.isdigit():
+                continue
+            if re.search(r"[א-תA-Za-z]", line):
+                candidate = line
+                break
+    if text:
+        match = re.search(r"ע[יר]יית\s+[^\n]{2,40}", text)
+        if match:
+            result = match.group(0).strip().replace("עריית", "עיריית")
+            return result
+        if ("פתח תק" in text or "הווקת חתפ" in text) and ("עיר" in text or "רשות" in text):
+            return "עיריית פתח תקווה"
+    return candidate
 
 
 def numeric_candidates(line: str) -> List[tuple[str, bool]]:
@@ -334,7 +656,18 @@ def infer_invoice_for(lines: List[str]) -> Optional[str]:
     for line in lines:
         if " עבור " in line or " - " in line:
             if len(line) < 200:
-                return line
+                normalized = normalize_invoice_for_value(line)
+                return normalized or line
+    for idx, line in enumerate(lines):
+        if "פירוט החיוב" in line:
+            tail = normalize_invoice_for_value(line.split("פירוט החיוב", 1)[-1])
+            if tail:
+                return tail
+            for lookahead in range(1, 4):
+                if idx + lookahead < len(lines):
+                    candidate = normalize_invoice_for_value(lines[idx + lookahead].strip())
+                    if candidate:
+                        return candidate
     return None
 
 
@@ -641,6 +974,7 @@ def infer_totals(
         "municipal": is_municipal,
         "breakdown_sum": block_sum,
         "breakdown_values": breakdown_values,
+        "base_before_vat": base_before_vat,
     }
 
 
@@ -681,7 +1015,7 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
     record = InvoiceRecord(source_file=path.name)
     record.invoice_id = infer_invoice_id(lines, text)
     record.invoice_date = infer_invoice_date(text)
-    invoice_from = infer_invoice_from(lines)
+    invoice_from = infer_invoice_from(lines, text)
     if invoice_from and len(invoice_from) > 120:
         invoice_from = invoice_from[:117] + "..."
     record.invoice_from = invoice_from
@@ -699,6 +1033,9 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
     record.breakdown_sum = totals.get("breakdown_sum")
     if totals.get("breakdown_values"):
         record.breakdown_values = totals["breakdown_values"]
+    record.base_before_vat = totals.get("base_before_vat")
+    record.vat_rate = totals.get("vat_rate")
+    record.municipal = totals.get("municipal")
     if (
         record.breakdown_sum is not None
         and record.invoice_total is not None
@@ -717,6 +1054,23 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
                 record.invoice_from = "רשות מקומית"
         if record.invoice_vat is None:
             record.invoice_vat = 0.0
+    period_start, period_end, period_label = extract_period_info(text)
+    record.period_start = period_start
+    record.period_end = period_end
+    record.period_label = period_label
+    record.due_date = extract_due_date(text)
+    references = extract_reference_numbers(text)
+    if references:
+        record.reference_numbers = references
+    category, category_confidence, category_rule = classify_invoice(
+        text, record.invoice_from, bool(record.municipal)
+    )
+    record.category = category
+    record.category_confidence = category_confidence
+    record.category_rule = category_rule
+    record.data_source = "pymupdf" if used_fallback else "pdfminer"
+    record.duplicate_hash = file_sha256(path)
+    record.parse_confidence = compute_parse_confidence(record)
     if debug:
         if used_fallback:
             print(f"[debug][{path.name}] used PyMuPDF fallback for text extraction")
@@ -775,6 +1129,20 @@ def write_csv(records: List[InvoiceRecord], output_path: Path) -> None:
         "breakdown_sum",
         "breakdown_values",
         "notes",
+        "base_before_vat",
+        "vat_rate",
+        "period_start",
+        "period_end",
+        "period_label",
+        "due_date",
+        "category",
+        "category_confidence",
+        "category_rule",
+        "reference_numbers",
+        "data_source",
+        "parse_confidence",
+        "municipal",
+        "duplicate_hash",
     ]
     with output_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
@@ -816,6 +1184,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    configure_pdfminer_logging(args.debug)
     input_dir = Path(args.input_dir)
     selected = args.files if args.files else None
     records = generate_report(input_dir, selected_files=selected, debug=args.debug)

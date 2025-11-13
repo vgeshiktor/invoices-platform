@@ -158,6 +158,65 @@ def test_infer_totals_municipal_block_enforces_zero_vat():
     assert totals["breakdown_values"] == [100.0, 200.0]
 
 
+def test_period_due_date_and_reference_helpers():
+    text = "תקופה: 01/09/2025 - 30/09/2025 לתשלום עד 15.10.2025 PO #12345"
+    start, end, label = report.extract_period_info(text)
+    assert start == "2025-09-01"
+    assert end == "2025-09-30"
+    assert "2025-09" in (label or "")
+    due = report.extract_due_date(text)
+    assert due == "2025-10-15"
+    refs = report.extract_reference_numbers(text)
+    assert "12345" in refs
+
+
+def test_classification_and_confidence_helpers():
+    category, confidence, rule = report.classify_invoice(
+        "חשבונית בזק שירותי אינטרנט", "בזק", False
+    )
+    assert category == "communication"
+    assert confidence and confidence >= 0.8
+    assert rule and "vendor" in rule
+    rec = report.InvoiceRecord(
+        source_file="a.pdf",
+        invoice_total=100.0,
+        invoice_vat=17.0,
+        breakdown_sum=100.0,
+        reference_numbers=["PO1234"],
+        category="communication",
+    )
+    rec.period_start = "2025-09-01"
+    rec.period_end = "2025-09-30"
+    confidence_score = report.compute_parse_confidence(rec)
+    assert confidence_score > 0.7
+
+
+def test_file_sha256(tmp_path):
+    target = tmp_path / "a.pdf"
+    target.write_bytes(b"abc")
+    digest = report.file_sha256(target)
+    assert digest == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+
+def test_extract_period_info_supports_ranges_and_bilingual_labels():
+    text = "תקופה: 01/09/2025 - 31/10/2025 לתשלום\n2025 אוקטובר-ספטמבר"
+    start, end, label = report.extract_period_info(text)
+    assert start == "2025-09-01"
+    assert end == "2025-10-31"
+    assert label in {"2025-09-01 - 2025-10-31", "ספטמבר - אוקטובר"}
+
+
+def test_infer_invoice_date_fallback_grabs_first_numeric():
+    text = "אישור חיוב 31/10/2025 ללא תאריך מפורש"
+    assert report.infer_invoice_date(text) == "31/10/2025"
+
+
+def test_infer_invoice_from_municipal_text():
+    lines = ["DB-102671-T80958", "פתח תקווה"]
+    text = "ברכות מעיריית פתח תקווה"
+    assert report.infer_invoice_from(lines, text) == "עיריית פתח תקווה"
+
+
 def test_generate_report_and_writers(tmp_path, monkeypatch):
     invoices_dir = tmp_path / "invoices"
     invoices_dir.mkdir()
@@ -186,3 +245,19 @@ def test_generate_report_and_writers(tmp_path, monkeypatch):
     loaded = json.loads(json_path.read_text(encoding="utf-8"))
     assert loaded[0]["invoice_total"] == 10.0
     assert "source_file" in csv_path.read_text(encoding="utf-8")
+
+
+def test_infer_invoice_for_handles_details_marker():
+    lines_simple = [
+        "header line",
+        "פירוט החיוב:",
+        "שלטים 2025",
+    ]
+    assert report.infer_invoice_for(lines_simple) == "שלטים 2025"
+
+    lines_with_amount = [
+        "פירוט החיוב:",
+        "955.50",
+        "1020057002009 ' יתרת חוב שלט מס- 2025 שלטים",
+    ]
+    assert report.infer_invoice_for(lines_with_amount) == "שלטים 2025"

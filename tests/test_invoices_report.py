@@ -73,3 +73,22 @@ def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
     assert entry["invoice_vat"] == pytest.approx(0.0)
     assert entry["breakdown_sum"] == pytest.approx(entry["invoice_total"], rel=1e-6)
     assert entry["breakdown_values"]
+
+
+def test_parse_invoice_municipal_regression(monkeypatch):
+    fake_text = """
+    עיריית פתח תקווה
+    תאריך הדפסה: 28/08/2025
+    מס׳ מסלקה/שובר/ספח: 4553051904
+    סה"כ לתשלום בש"ח: 955.50
+    """
+    fake_lines = [ln.strip() for ln in fake_text.splitlines() if ln.strip()]
+
+    monkeypatch.setattr(report, "extract_text", lambda path: fake_text)
+    monkeypatch.setattr(report, "extract_text_with_pymupdf", lambda path: fake_text)
+    monkeypatch.setattr(report, "extract_lines", lambda text: fake_lines)
+
+    record = report.parse_invoice(Path("dummy.pdf"), debug=False)
+    assert record.invoice_id == "4553051904"
+    assert record.invoice_date == "28/08/2025"
+    assert record.invoice_from == "עיריית פתח תקווה"
