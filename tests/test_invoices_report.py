@@ -102,6 +102,9 @@ def test_rami_levy_invoice_from_detected(monkeypatch):
     assert not record.municipal
     assert record.category == "communication"
     assert record.category_rule and record.category_rule.startswith("vendor:")
+    assert record.invoice_total == pytest.approx(23.42, rel=1e-3)
+    assert record.invoice_vat == pytest.approx(3.57, rel=1e-3)
+    assert record.base_before_vat == pytest.approx(19.85, rel=1e-3)
 
 
 def test_ravkav_invoice_parsing(monkeypatch):

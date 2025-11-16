@@ -1184,12 +1184,13 @@ def infer_totals(
         if numeric:
             total = max(numeric)
     currency_tokens = re.findall(r"₪\s*([\d.,]+)", text)
+    fallback_total = select_amount(currency_tokens[::-1])
     if total is None:
-        total = select_amount(currency_tokens[::-1])
-    if total is not None and total <= 5:
-        fallback_total = select_amount(currency_tokens[::-1])
-        if fallback_total and fallback_total > total:
-            total = fallback_total
+        total = fallback_total
+    elif fallback_total and fallback_total < total and (total - fallback_total) > 50:
+        total = fallback_total
+    elif total is not None and total <= 5 and fallback_total and fallback_total > total:
+        total = fallback_total
     if base_candidates:
         candidates = base_candidates[:]
         if total is not None:
@@ -1316,6 +1317,12 @@ def infer_totals(
         if recalculated_vat >= 0:
             vat = recalculated_vat
             dbg(f"vat replaced via base diff → {vat}")
+
+    if total is not None and vat is not None:
+        candidate_base = round(total - vat, 2)
+        if candidate_base >= 0:
+            if base_before_vat is None or abs(base_before_vat - candidate_base) > 1.0:
+                base_before_vat = candidate_base
 
     municipal_markers = [
         "ארנונה",
