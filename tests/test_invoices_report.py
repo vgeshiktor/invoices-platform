@@ -112,3 +112,17 @@ def test_ravkav_invoice_parsing(monkeypatch):
     assert record.vat_rate == pytest.approx(18.0, rel=1e-3)
     assert record.category == "transportation"
     assert record.category_rule and record.category_rule.startswith("vendor:")
+
+
+def test_partner_postpaid_invoice_totals(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "partner_postpaid_998018687.txt")
+    assert record.invoice_id == "6523791025"
+    assert record.invoice_total == pytest.approx(976.0, rel=1e-3)
+    assert record.invoice_vat == pytest.approx(148.88, rel=1e-3)
+    assert record.base_before_vat == pytest.approx(827.12, rel=1e-3)
+    assert record.invoice_from == 'חברת פרטנר תקשורת בע"מ'
+    assert (
+        record.invoice_for
+        == "5 מנויי סלולר | 1 מנוי תמסורת 01-0-9017125 | תנועות כלליות בחשבון הלקוח"
+    )
+    assert record.category == "communication"

@@ -31,6 +31,7 @@ def test_invoice_record_to_csv_row_formats_numbers():
 def test_normalize_parse_and_select_amounts():
     assert report.normalize_amount_token("-1,234.50") == "-1234.50"
     assert report.normalize_amount_token("123.456") == "654.321"
+    assert report.normalize_amount_token("00.976") == "976.00"
     assert report.parse_number("bad") is None
     tokens = ["0020", "12.30", "100", "5.555"]
     assert report.select_amount(tokens) == pytest.approx(12.30)

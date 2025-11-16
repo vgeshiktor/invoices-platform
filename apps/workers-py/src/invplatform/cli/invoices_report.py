@@ -30,7 +30,12 @@ except ModuleNotFoundError:
 
 Amount = Optional[float]
 
-KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (("יול ימר", "רמי לוי תקשורת"),)
+KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
+    ("יול ימר", "רמי לוי תקשורת"),
+    ("פרטנר", 'חברת פרטנר תקשורת בע"מ'),
+    ("רנטרפ", 'חברת פרטנר תקשורת בע"מ'),
+    ("partner communications", 'חברת פרטנר תקשורת בע"מ'),
+)
 
 PETAH_TIKVA_KEYWORDS: Tuple[str, ...] = ("פתח תק", "הווקת חתפ")
 PETAH_TIKVA_MUNICIPAL_MARKERS: Tuple[str, ...] = (
@@ -122,9 +127,14 @@ def normalize_amount_token(raw: Optional[str]) -> Optional[str]:
     token = "".join(ch for ch in raw if ch.isdigit() or ch in ".,")
     if not token:
         return None
-    if re.match(r"^\d+\.\d{3}$", token.lstrip("-")):
-        body = token.lstrip("-")[::-1]
-        token = ("-" if token.startswith("-") else "") + body
+    body = token.lstrip("-")
+    if re.match(r"^\d+\.\d{3}$", body):
+        head, tail = body.split(".")
+        if len(head) <= 2:
+            swapped = tail + "." + head
+        else:
+            swapped = body[::-1]
+        token = ("-" if token.startswith("-") else "") + swapped
     if "," in token and "." in token:
         token = token.replace(",", "")
     elif token.count(",") > 1:
@@ -417,6 +427,7 @@ CATEGORY_RULES: List[Tuple[str, float, List[str], List[str]]] = [
             "bezeq",
             "cellcom",
             "partner",
+            "פרטנר",
             "hot",
             "yes",
             "סטינג",
@@ -568,8 +579,46 @@ def extract_text_with_pymupdf(path: Path) -> str:
 
 def extract_lines(text: str) -> List[str]:
     cleaned = text.replace("\r", "\n")
-    lines = [ln.strip() for ln in cleaned.splitlines()]
-    return [ln for ln in lines if ln]
+    raw_lines = [ln.strip() for ln in cleaned.splitlines()]
+    raw_lines = [ln for ln in raw_lines if ln]
+
+    def is_basic_number(token: str) -> bool:
+        return bool(re.fullmatch(r"-?\d+", token))
+
+    merged: List[str] = []
+    i = 0
+    while i < len(raw_lines):
+        line = raw_lines[i]
+        if line == "." and merged and i + 1 < len(raw_lines):
+            prev = merged.pop()
+            nxt = raw_lines[i + 1]
+            if is_basic_number(prev) and is_basic_number(nxt):
+                merged.append(f"{nxt}.{prev}")
+                i += 2
+                continue
+            merged.append(prev)
+        elif line.endswith(".") and line != "." and line.count(".") == 1:
+            body = line[:-1]
+            if is_basic_number(body):
+                combined = False
+                if merged:
+                    prev = merged[-1]
+                    if is_basic_number(prev):
+                        merged[-1] = f"{prev}.{body}"
+                        i += 1
+                        combined = True
+                if combined:
+                    continue
+                if i + 1 < len(raw_lines):
+                    nxt = raw_lines[i + 1]
+                    if is_basic_number(nxt):
+                        merged.append(f"{nxt}.{body}")
+                        i += 2
+                        continue
+        merged.append(line)
+        i += 1
+
+    return [ln for ln in merged if ln]
 
 
 def search_patterns(patterns: Iterable[str], text: str) -> Optional[str]:
@@ -603,6 +652,26 @@ def normalize_invoice_for_value(raw: Optional[str]) -> Optional[str]:
 
 def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
     candidates: List[Tuple[int, str]] = []
+
+    if text:
+        special_match = re.search(
+            r"מס.?['׳]?\s+חשבון\s+תקופתי[:\s-]*([\d-]{6,})",
+            text,
+            flags=re.MULTILINE,
+        )
+        if special_match:
+            cleaned = re.sub(r"\D", "", special_match.group(1))
+            if cleaned:
+                return cleaned
+        period_match = re.search(
+            r"([\d-]{6,})[\s\S]{0,80}?[:]?יתפוקת",
+            text,
+            flags=re.MULTILINE,
+        )
+        if period_match:
+            cleaned = re.sub(r"\D", "", period_match.group(1))
+            if cleaned:
+                return cleaned
 
     def add_candidate(value: Optional[str], priority: int) -> None:
         val = (value or "").strip()
@@ -782,9 +851,58 @@ def sum_numeric_block(
     return (total if found else None, values)
 
 
+def extract_partner_invoice_for(lines: List[str], raw_text: Optional[str] = None) -> Optional[str]:
+    stop_markers = ['סה"כ', "סהכ", 'כ"הס']
+    for idx, line in enumerate(lines):
+        if "פירוט" in line and "חיובים" in line and "זיכויים" in line and "החשבון" in line:
+            details: List[str] = []
+            for lookahead in range(1, 8):
+                pos = idx + lookahead
+                if pos >= len(lines):
+                    break
+                candidate = lines[pos].strip()
+                if not candidate:
+                    continue
+                if any(marker in candidate for marker in stop_markers):
+                    break
+                if re.search(r"[א-תA-Za-z]", candidate):
+                    details.append(candidate)
+                if len(details) >= 4:
+                    break
+            if details:
+                return " | ".join(details)
+            return "פירוט חיובים וזיכויים לתקופת החשבון"
+
+    if raw_text:
+        segment_match = re.search(
+            r"פירוט\s+חיובים\s+וזיכויים\s+לתקופת\s+החשבון\s+(.*?)\s+סה\"?כ\s+חיובי\s+החשבון",
+            raw_text,
+            flags=re.DOTALL,
+        )
+        if segment_match:
+            segment = segment_match.group(1)
+            entries: List[str] = []
+            match_mobile = re.search(r"(\d+)מנויי\s*סלולר", segment)
+            if match_mobile:
+                entries.append(f"{match_mobile.group(1)} מנויי סלולר")
+            match_transport = re.search(r"(\d+)מנוי\s*תמסורת\s*([\d-]+)", segment)
+            if match_transport:
+                count, ident = match_transport.groups()
+                entries.append(f"{count} מנוי תמסורת {ident}")
+            if re.search(r"תנועות\s+כלליות\s+בחשבון\s+הלקוח", segment):
+                entries.append("תנועות כלליות בחשבון הלקוח")
+            if entries:
+                return " | ".join(entries)
+            return "פירוט חיובים וזיכויים לתקופת החשבון"
+    return None
+
+
 def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     if has_public_transport_marker(text):
         return PUBLIC_TRANSPORT_INVOICE_FOR
+    partner_summary = extract_partner_invoice_for(lines, text)
+    if partner_summary:
+        return partner_summary
     if ":םיטרפ" in " ".join(lines):
         try:
             start = lines.index(":םיטרפ")
@@ -931,9 +1049,56 @@ def infer_totals(
             prefix = f"[debug][{label}] " if label else "[debug] "
             print(prefix + msg)
 
+    def numbers_after_marker(marker: str, limit: int = 10) -> Tuple[List[float], List[float]]:
+        best: List[float] = []
+        best_len = 0
+        best_max: Optional[float] = None
+        aggregated: List[float] = []
+        for idx, line in enumerate(lines):
+            if marker not in line:
+                continue
+            collected: List[float] = []
+            for offset in range(1, limit + 1):
+                pos = idx + offset
+                if pos >= len(lines):
+                    break
+                token = lines[pos]
+                if "." not in token and "," not in token and "₪" not in token:
+                    if collected:
+                        break
+                    continue
+                value = parse_number(token)
+                if value is None:
+                    if collected:
+                        break
+                    continue
+                collected.append(value)
+            if collected:
+                aggregated.extend(collected)
+                col_max = max(collected)
+                size = len(collected)
+                if (
+                    not best
+                    or (size >= 3 > best_len)
+                    or (size >= 3 and best_len >= 3 and (best_max is None or col_max > best_max))
+                    or (best_len < 3 and size < 3 and (best_max is None or col_max > best_max))
+                ):
+                    best = collected
+                    best_len = size
+                    best_max = col_max
+        return best, aggregated
+
+    total_block, total_values = numbers_after_marker('כ"הס', limit=16)
+    block_alt, values_alt = numbers_after_marker('סה"כ', limit=16)
+    if block_alt and (not total_block or max(block_alt) > max(total_block)):
+        total_block = block_alt
+    total_values.extend(values_alt)
+
     total = find_amount_before_marker(lines, 'םלוש כ"הס', prefer_inline=True)
     if total is None:
         total = find_amount_before_marker(lines, 'םולשתל כ"הס', prefer_inline=True)
+    if total is None:
+        total = find_amount_before_marker(lines, "םולשתל", prefer_inline=True)
     base_before_vat = find_amount_before_marker(lines, 'מ"עמ ינפל', prefer_inline=True)
     base_candidates = numeric_values_near_marker(lines, 'מ"עמ ינפל')
     vat = find_amount_before_marker(lines, 'לע מ"עמ')
@@ -1008,6 +1173,10 @@ def infer_totals(
         match = re.search(r"סה.?\"?כ.? ?יגבה[^0-9]+([\d.,]+)", text)
         if match:
             total = parse_number(match.group(1))
+    if total_block:
+        block_max = max(total_block)
+        if block_max and block_max > 0:
+            total = block_max
     if total is None:
         matches = re.findall(r"₪\s*([\d.,]+)\s*[:\-]?\s*כ[\"״']?הס", text)
         amounts = [parse_number(token) for token in matches]
@@ -1030,6 +1199,13 @@ def infer_totals(
         if candidates:
             base_before_vat = max(candidates)
     dbg(f"total after heuristics={total}, base_before_vat={base_before_vat}")
+
+    if base_before_vat is None and total is not None and total_values:
+        approx_base = total / 1.18 if total > 0 else None
+        if approx_base:
+            candidates = [val for val in total_values if 0 < val < total]
+            if candidates:
+                base_before_vat = min(candidates, key=lambda val: abs(val - approx_base))
 
     if vat is None:
         vat_patterns = [
@@ -1078,6 +1254,11 @@ def infer_totals(
             replacement_vat = filtered_vat[0]
         if replacement_vat is not None:
             vat = replacement_vat
+
+    if vat is None and total is not None and base_before_vat is not None:
+        candidate_vat = round(total - base_before_vat, 2)
+        if candidate_vat >= 0:
+            vat = candidate_vat
 
     if vat is not None and total is not None and vat > total:
         vat = None
@@ -1194,6 +1375,33 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
             text = fallback_text
             used_fallback = True
 
+    if fallback_text:
+        pymupdf_text_cache: Optional[str] = fallback_text
+        pymupdf_lines_cache: Optional[List[str]] = extract_lines(fallback_text)
+    else:
+        pymupdf_text_cache = None
+        pymupdf_lines_cache = None
+
+    def ensure_pymupdf_data() -> None:
+        nonlocal pymupdf_text_cache, pymupdf_lines_cache
+        if pymupdf_text_cache is not None:
+            return
+        if not HAVE_PYMUPDF:
+            pymupdf_text_cache = ""
+            pymupdf_lines_cache = []
+            return
+        extra = extract_text_with_pymupdf(path)
+        pymupdf_text_cache = extra or ""
+        pymupdf_lines_cache = extract_lines(pymupdf_text_cache) if pymupdf_text_cache else []
+
+    def get_pymupdf_text() -> str:
+        ensure_pymupdf_data()
+        return pymupdf_text_cache or ""
+
+    def get_pymupdf_lines() -> List[str]:
+        ensure_pymupdf_data()
+        return pymupdf_lines_cache or []
+
     lines = extract_lines(text)
     if debug:
         print(f"\n[debug][{path.name}] === pdfminer text preview ===")
@@ -1211,10 +1419,23 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
     record.invoice_id = infer_invoice_id(lines, text)
     record.invoice_date = infer_invoice_date(text)
     invoice_from = infer_invoice_from(lines, text)
+    if not invoice_from or invoice_from.startswith(":"):
+        extra_text = get_pymupdf_text()
+        extra_lines = get_pymupdf_lines()
+        if extra_text and extra_lines:
+            alt_from = infer_invoice_from(extra_lines, extra_text)
+            if alt_from:
+                invoice_from = alt_from
     if invoice_from and len(invoice_from) > 120:
         invoice_from = invoice_from[:117] + "..."
     record.invoice_from = invoice_from
-    record.invoice_for = infer_invoice_for(lines, text)
+    invoice_for = infer_invoice_for(lines, text)
+    if not invoice_for:
+        extra_text = get_pymupdf_text()
+        extra_lines = get_pymupdf_lines()
+        if extra_text and extra_lines:
+            invoice_for = infer_invoice_for(extra_lines, extra_text)
+    record.invoice_for = invoice_for
     lines_pdfminer = extract_lines(text_pdfminer)
     totals = infer_totals(
         lines,
