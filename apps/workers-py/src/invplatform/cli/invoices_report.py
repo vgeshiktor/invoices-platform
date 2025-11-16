@@ -452,7 +452,12 @@ CATEGORY_RULES: List[Tuple[str, float, List[str], List[str]]] = [
         ["subscription", "license"],
     ),
     ("finance", 0.7, ["visa", "mastercard", "amex", "isracard"], ["כרטיס אשראי"]),
-    ("services", 0.6, [], ["שירות", "service", "support"]),
+    (
+        "services",
+        0.6,
+        ["קרן-מדריכת הורים ותינוקות"],
+        ["שירות", "service", "support"],
+    ),
 ]
 
 
@@ -663,6 +668,12 @@ def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
             cleaned = re.sub(r"\D", "", special_match.group(1))
             if cleaned:
                 return cleaned
+        normalized_id_text = " ".join(text.split())
+        alt_match = re.search(r"(\d{3,})\s+קבלה\s+מס\s+חשבונית", normalized_id_text)
+        if alt_match:
+            cleaned = re.sub(r"\D", "", alt_match.group(1))
+            if cleaned:
+                return cleaned
         period_match = re.search(
             r"([\d-]{6,})[\s\S]{0,80}?[:]?יתפוקת",
             text,
@@ -681,6 +692,7 @@ def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
         candidates.append((priority, cleaned or val))
 
     pattern_defs = [
+        (r"חשבונית\s+מס\s+קבלה\s*(\d+)", 0),
         (r"חשבונית(?:\s+מס)?(?:\s+קבלה)?\s*(?:מספר|No\.?)\s*[:\-]?\s*(\d+)", 0),
         (r"(\d{4,})\s*רפסמ\s*תינובשח", 0),
         (r"(\d{4,})\s*רפסמ\s*קיתב\s*מ\"עמ", 1),
@@ -781,6 +793,9 @@ def infer_invoice_from(lines: List[str], text: Optional[str] = None) -> Optional
     if vendor:
         return vendor
     if text:
+        normalized_text = re.sub(r"\s+", " ", text)
+        if all(term in normalized_text for term in ("קרן", "מדריכת", "הורים", "ותינוקות")):
+            return "קרן-מדריכת הורים ותינוקות"
         match = re.search(r"ע[יר]יית\s+[^\n]{2,40}", text)
         if match:
             result = match.group(0).strip().replace("עריית", "עיריית")
@@ -851,6 +866,17 @@ def sum_numeric_block(
     return (total if found else None, values)
 
 
+def extract_keren_invoice_for(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    normalized = " ".join(text.split())
+    match = re.search(r"פירוט\s+(20\d{2})\s+([א-ת]+)\s+תנועה\s+חוג", normalized)
+    if match:
+        year, month = match.groups()
+        return f"חוג תנועה {month} {year}"
+    return None
+
+
 def extract_partner_invoice_for(lines: List[str], raw_text: Optional[str] = None) -> Optional[str]:
     stop_markers = ['סה"כ', "סהכ", 'כ"הס']
     for idx, line in enumerate(lines):
@@ -900,6 +926,9 @@ def extract_partner_invoice_for(lines: List[str], raw_text: Optional[str] = None
 def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     if has_public_transport_marker(text):
         return PUBLIC_TRANSPORT_INVOICE_FOR
+    keren_summary = extract_keren_invoice_for(text)
+    if keren_summary:
+        return keren_summary
     partner_summary = extract_partner_invoice_for(lines, text)
     if partner_summary:
         return partner_summary

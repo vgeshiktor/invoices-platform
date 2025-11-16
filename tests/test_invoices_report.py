@@ -135,3 +135,12 @@ def test_bezeq_invoice_totals(monkeypatch):
     record = _parse_fixture_invoice(monkeypatch, "bezeq_80927472.txt")
     assert record.invoice_total == pytest.approx(894.63, rel=1e-3)
     assert record.invoice_vat == pytest.approx(136.47, rel=1e-3)
+
+
+def test_keren_invoice_fields(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "keren_3147.txt")
+    assert record.invoice_from == "קרן-מדריכת הורים ותינוקות"
+    assert record.invoice_id == "3147"
+    assert record.invoice_for == "חוג תנועה ספטמבר 2025"
+    assert record.category == "services"
+    assert record.category_rule and record.category_rule.startswith("vendor:")
