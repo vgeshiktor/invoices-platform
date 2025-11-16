@@ -1093,6 +1093,7 @@ def infer_totals(
     if block_alt and (not total_block or max(block_alt) > max(total_block)):
         total_block = block_alt
     total_values.extend(values_alt)
+    block_max = max(total_block) if total_block else None
 
     total = find_amount_before_marker(lines, 'םלוש כ"הס', prefer_inline=True)
     if total is None:
@@ -1173,9 +1174,8 @@ def infer_totals(
         match = re.search(r"סה.?\"?כ.? ?יגבה[^0-9]+([\d.,]+)", text)
         if match:
             total = parse_number(match.group(1))
-    if total_block:
-        block_max = max(total_block)
-        if block_max and block_max > 0:
+    if block_max:
+        if total is None or (block_max > total and block_max - total > 50):
             total = block_max
     if total is None:
         matches = re.findall(r"₪\s*([\d.,]+)\s*[:\-]?\s*כ[\"״']?הס", text)

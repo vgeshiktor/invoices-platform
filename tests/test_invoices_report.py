@@ -126,3 +126,9 @@ def test_partner_postpaid_invoice_totals(monkeypatch):
         == "5 מנויי סלולר | 1 מנוי תמסורת 01-0-9017125 | תנועות כלליות בחשבון הלקוח"
     )
     assert record.category == "communication"
+
+
+def test_bezeq_invoice_totals(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "bezeq_80927472.txt")
+    assert record.invoice_total == pytest.approx(894.63, rel=1e-3)
+    assert record.invoice_vat == pytest.approx(136.47, rel=1e-3)
