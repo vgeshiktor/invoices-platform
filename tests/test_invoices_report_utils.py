@@ -80,6 +80,21 @@ def test_numeric_helpers_and_blocks():
     assert entries == [1000.0, 250.0]
 
 
+def test_infer_totals_prefers_municipal_block_sum():
+    lines = [
+        "line",
+        'ח"שב',
+        "100.0",
+        "200.0",
+        "סכנה",
+        'סה"כ לתשלום 50.0',
+    ]
+    text = 'ארנונה סה"כ לתשלום 50.0'
+    totals = report.infer_totals(lines, text, pdfminer_lines=lines)
+    assert totals["invoice_total"] == pytest.approx(300.0)
+    assert totals["breakdown_sum"] == pytest.approx(300.0)
+
+
 def test_needs_fallback_extract_lines_and_search_patterns():
     assert report.needs_fallback_text("") is True
     assert report.needs_fallback_text("a" * 10) is True

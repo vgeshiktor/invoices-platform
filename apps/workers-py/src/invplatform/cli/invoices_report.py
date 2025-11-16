@@ -1335,9 +1335,10 @@ def infer_totals(
         ["סכנה", "סה", 'סה"', "סה''כ יגבה", 'סה"כ יגבה', 'סה"כ יגבה'],
     )
     if is_municipal:
-        if (total is None or total < 50) and block_sum is not None:
-            total = block_sum
-            dbg(f"municipal total derived from block sum={total}")
+        if block_sum is not None:
+            if total is None or total < 50 or abs(total - block_sum) > 1.0:
+                total = block_sum
+                dbg(f"municipal total derived from block sum={total}")
         vat = 0.0
         dbg("municipal invoice detected → forcing VAT=0")
 
