@@ -35,6 +35,10 @@ KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("פרטנר", 'חברת פרטנר תקשורת בע"מ'),
     ("רנטרפ", 'חברת פרטנר תקשורת בע"מ'),
     ("partner communications", 'חברת פרטנר תקשורת בע"מ'),
+    ("אופק הפקות", "אופק הפקות"),
+    ("הפקות אופק", "אופק הפקות"),
+    ("אופק", "אופק הפקות"),
+    ("ofek productions", "אופק הפקות"),
 )
 
 PETAH_TIKVA_KEYWORDS: Tuple[str, ...] = ("פתח תק", "הווקת חתפ")
@@ -455,7 +459,7 @@ CATEGORY_RULES: List[Tuple[str, float, List[str], List[str]]] = [
     (
         "services",
         0.6,
-        ["קרן-מדריכת הורים ותינוקות"],
+        ["קרן-מדריכת הורים ותינוקות", "אופק הפקות"],
         ["שירות", "service", "support"],
     ),
 ]
@@ -796,6 +800,14 @@ def infer_invoice_from(lines: List[str], text: Optional[str] = None) -> Optional
         normalized_text = re.sub(r"\s+", " ", text)
         if all(term in normalized_text for term in ("קרן", "מדריכת", "הורים", "ותינוקות")):
             return "קרן-מדריכת הורים ותינוקות"
+        match = re.search(r"מאת\s+([^\n]+)", text)
+        if match:
+            candidate = match.group(1).strip()
+            for stop in (":", "לכבוד", "שם"):
+                if stop in candidate:
+                    candidate = candidate.split(stop, 1)[0].strip()
+            if candidate:
+                return candidate
         match = re.search(r"ע[יר]יית\s+[^\n]{2,40}", text)
         if match:
             result = match.group(0).strip().replace("עריית", "עיריית")
@@ -923,12 +935,27 @@ def extract_partner_invoice_for(lines: List[str], raw_text: Optional[str] = None
     return None
 
 
+def extract_ofek_invoice_for(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    normalized = " ".join(text.split())
+    month_pattern = r"(אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר|ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי)"
+    matches = re.findall(r"חוג\s+תיאטרון\s+חודש\s+" + month_pattern, normalized)
+    matches += re.findall(month_pattern + r"\s+חודש\s+תיאטרון\s+חוג", normalized)
+    if matches:
+        return " | ".join(f"חוג תיאטרון חודש {month}" for month in matches)
+    return None
+
+
 def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     if has_public_transport_marker(text):
         return PUBLIC_TRANSPORT_INVOICE_FOR
     keren_summary = extract_keren_invoice_for(text)
     if keren_summary:
         return keren_summary
+    ofek_summary = extract_ofek_invoice_for(text)
+    if ofek_summary:
+        return ofek_summary
     partner_summary = extract_partner_invoice_for(lines, text)
     if partner_summary:
         return partner_summary

@@ -144,3 +144,12 @@ def test_keren_invoice_fields(monkeypatch):
     assert record.invoice_for == "חוג תנועה ספטמבר 2025"
     assert record.category == "services"
     assert record.category_rule and record.category_rule.startswith("vendor:")
+
+
+def test_ofek_invoice_fields(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "ofek_productions_5857.txt")
+    assert record.invoice_from == "אופק הפקות"
+    assert record.invoice_id == "5857"
+    assert record.invoice_for == "חוג תיאטרון חודש ספטמבר | חוג תיאטרון חודש אוגוסט"
+    assert record.category == "services"
+    assert record.category_rule and record.category_rule.startswith("vendor:")
