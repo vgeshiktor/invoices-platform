@@ -153,3 +153,13 @@ def test_ofek_invoice_fields(monkeypatch):
     assert record.invoice_for == "חוג תיאטרון חודש ספטמבר | חוג תיאטרון חודש אוגוסט"
     assert record.category == "services"
     assert record.category_rule and record.category_rule.startswith("vendor:")
+
+
+def test_stingtv_invoice_fields(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "stingtv_09_2025.txt")
+    assert record.invoice_from == "STINGTV"
+    assert record.invoice_for == "שירותי תוכן בינלאומיים | ספריות וערוצי פרימיום"
+    assert record.category == "communication"
+    assert record.category_rule and record.category_rule.startswith("vendor:")
+    assert record.breakdown_values == [99.8, 35.0, 0.0]
+    assert record.breakdown_sum == pytest.approx(record.invoice_total, rel=1e-3)

@@ -39,6 +39,10 @@ KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("הפקות אופק", "אופק הפקות"),
     ("אופק", "אופק הפקות"),
     ("ofek productions", "אופק הפקות"),
+    ("סטינג", "STINGTV"),
+    ("stingtv", "STINGTV"),
+    ("סי יתורש", "STINGTV"),
+    ("יתורש סי", "STINGTV"),
 )
 
 PETAH_TIKVA_KEYWORDS: Tuple[str, ...] = ("פתח תק", "הווקת חתפ")
@@ -866,9 +870,10 @@ def sum_numeric_block(
             collecting = True
             continue
         if collecting:
+            stripped = line.strip()
             if any(end in line for end in end_markers):
                 break
-            token = line.strip()
+            token = stripped
             if re.match(r"^-?\d[\d,]*(?:\.\d+)?$", token):
                 val = parse_number(token)
                 if val is not None:
@@ -947,6 +952,51 @@ def extract_ofek_invoice_for(text: Optional[str]) -> Optional[str]:
     return None
 
 
+def extract_stingtv_invoice_for(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    normalized = " ".join(text.split())
+    phrase_variants = {
+        "שירותי תוכן בינלאומיים": [
+            "שירותי תוכן בינלאומיים",
+            "םיימואלניב ןכות יתוריש",
+        ],
+        "ספריות וערוצי פרימיום": [
+            "ספריות וערוצי פרימיום",
+            "םוימירפ יצורעו תוירפס",
+        ],
+    }
+    found: List[str] = []
+    for canonical, variants in phrase_variants.items():
+        if any(variant in normalized for variant in variants):
+            found.append(canonical)
+    if found:
+        return " | ".join(found)
+    return None
+
+
+def extract_stingtv_breakdown(text: Optional[str]) -> List[float]:
+    if not text:
+        return []
+    normalized = " ".join(text.split())
+    start = normalized.find("ןובשחה טוריפ")
+    if start == -1:
+        return []
+    end_markers = ["עצבמב לולכ", "תמלשומה", "Sample"]
+    end = len(normalized)
+    for marker in end_markers:
+        idx = normalized.find(marker, start)
+        if idx != -1:
+            end = min(end, idx)
+    section = normalized[start:end]
+    values: List[float] = []
+    for token in re.findall(r"-?\d[\d.,]*", section):
+        amount = parse_number(token)
+        if amount is not None:
+            values.append(amount)
+    return values
+
+
 def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     if has_public_transport_marker(text):
         return PUBLIC_TRANSPORT_INVOICE_FOR
@@ -956,6 +1006,9 @@ def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[
     ofek_summary = extract_ofek_invoice_for(text)
     if ofek_summary:
         return ofek_summary
+    stingtv_summary = extract_stingtv_invoice_for(text)
+    if stingtv_summary:
+        return stingtv_summary
     partner_summary = extract_partner_invoice_for(lines, text)
     if partner_summary:
         return partner_summary
@@ -1395,8 +1448,23 @@ def infer_totals(
     block_sum, breakdown_values = sum_numeric_block(
         block_source,
         ['ח"שב', "חשב כ"],
-        ["סכנה", "סה", 'סה"', "סה''כ יגבה", 'סה"כ יגבה', 'סה"כ יגבה'],
+        [
+            "סכנה",
+            "סה",
+            'סה"',
+            "סה''כ יגבה",
+            'סה"כ יגבה',
+            'סה"כ יגבה',
+            "Sample text",
+            "ללוכ בויח",
+            "ןובשחה טוריפ",
+            "עצבמב לולכ",
+        ],
     )
+    stingtv_breakdown = extract_stingtv_breakdown(text)
+    if stingtv_breakdown:
+        block_sum = sum(stingtv_breakdown) if stingtv_breakdown else None
+        breakdown_values = stingtv_breakdown
     if is_municipal:
         if block_sum is not None:
             if total is None or total < 50 or abs(total - block_sum) > 1.0:
