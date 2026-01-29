@@ -279,12 +279,19 @@ class GraphClient:  # pragma: no cover - requires live Graph API/MSAL
 
     def _acquire_token_device_code(self) -> str:
         app = msal.PublicClientApplication(self.client_id, authority=self.authority)
-        flow = app.initiate_device_flow(scopes=self.scopes)
-        if "user_code" not in flow:
-            raise RuntimeError("MSAL device flow init failed")
-        print("== Device Code Authentication ==")
-        print(flow["message"])
-        res = app.acquire_token_by_device_flow(flow)
+
+        def run_flow() -> dict:
+            flow = app.initiate_device_flow(scopes=self.scopes)
+            if "user_code" not in flow:
+                raise RuntimeError("MSAL device flow init failed")
+            print("== Device Code Authentication ==")
+            print(flow["message"])
+            return app.acquire_token_by_device_flow(flow)
+
+        res = run_flow()
+        if res.get("error") == "expired_token":
+            print("Device code expired before authorization; retrying with a fresh code...")
+            res = run_flow()
         if "access_token" not in res:
             raise RuntimeError(f"MSAL failed: {res}")
         return res["access_token"]
@@ -419,114 +426,96 @@ def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
     normalized_url = normalize_myinvoice_url(url)
     res["normalized_url"] = normalized_url
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=headless, args=["--disable-blink-features=AutomationControlled"]
-        )
-        context = browser.new_context(
-            accept_downloads=True,
-            locale="he-IL",
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
-            ),
-            extra_http_headers={"Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"},
-        )
-        if keep_trace:
-            context.tracing.start(screenshots=True, snapshots=True, sources=False)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=headless, args=["--disable-blink-features=AutomationControlled"]
+            )
+            context = browser.new_context(
+                accept_downloads=True,
+                locale="he-IL",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+                ),
+                extra_http_headers={"Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7"},
+            )
+            if keep_trace:
+                context.tracing.start(screenshots=True, snapshots=True, sources=False)
 
-        api_urls: List[str] = []
+            api_urls: List[str] = []
 
-        def on_console(m):
+            def on_console(m):
+                try:
+                    t = (
+                        m.type()
+                        if callable(getattr(m, "type", None))
+                        else str(getattr(m, "type", ""))
+                    )
+                    x = (
+                        m.text()
+                        if callable(getattr(m, "text", None))
+                        else str(getattr(m, "text", ""))
+                    )
+                    note(f"console:{t}:{x}")
+                    if "GetAttachedInvoiceById" in x:
+                        mm = re.search(r"https?://[^\s\"']+GetAttachedInvoiceById[^\s\"']+", x)
+                        if mm:
+                            api_urls.append(mm.group(0))
+                except Exception:
+                    pass
+
+            def on_request(req):
+                try:
+                    if "GetAttachedInvoiceById" in (req.url or ""):
+                        api_urls.append(req.url)
+                except Exception:
+                    pass
+
+            def on_response(resp):
+                try:
+                    if "GetAttachedInvoiceById" in (resp.url or ""):
+                        api_urls.append(resp.url)
+                except Exception:
+                    pass
+
+            page = context.new_page()
+            page.on("console", on_console)
+            context.on("request", on_request)
+            context.on("response", on_response)
+
             try:
-                t = m.type() if callable(getattr(m, "type", None)) else str(getattr(m, "type", ""))
-                x = m.text() if callable(getattr(m, "text", None)) else str(getattr(m, "text", ""))
-                note(f"console:{t}:{x}")
-                if "GetAttachedInvoiceById" in x:
-                    mm = re.search(r"https?://[^\s\"']+GetAttachedInvoiceById[^\s\"']+", x)
-                    if mm:
-                        api_urls.append(mm.group(0))
-            except Exception:
-                pass
+                page.goto(normalized_url, wait_until="domcontentloaded")
+                page.wait_for_load_state("networkidle", timeout=12000)
+            except PWTimeout:
+                note("networkidle_timeout")
 
-        def on_request(req):
-            try:
-                if "GetAttachedInvoiceById" in (req.url or ""):
-                    api_urls.append(req.url)
-            except Exception:
-                pass
+            # הורדה ישירה מה-API
+            def direct_api(u: str) -> Optional[Tuple[str, bytes]]:
+                try:
+                    resp = context.request.get(u, headers={"Referer": normalized_url})
+                    body = resp.body()
+                    ct = (resp.headers.get("content-type") or "").lower()
+                    if (ct and "pdf" in ct) or body[:4] == b"%PDF":
+                        name = "bezeq_invoice_api.pdf"
+                        # ננסה להוסיף InvoiceId לשם
+                        q = parse_qs(urlparse(u).query)
+                        inv_id = (q.get("InvoiceId") or [""])[0]
+                        cd = resp.headers.get("content-disposition") or ""
+                        m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
+                        if m:
+                            name = sanitize_filename(m.group(1))
+                            if not name.lower().endswith(".pdf"):
+                                name += ".pdf"
+                        if inv_id:
+                            stem, ext = os.path.splitext(name)
+                            name = f"{stem}__{inv_id}{ext or '.pdf'}"
+                        return name, body
+                except Exception as e:
+                    note(f"direct_api_err:{e}")
+                return None
 
-        def on_response(resp):
-            try:
-                if "GetAttachedInvoiceById" in (resp.url or ""):
-                    api_urls.append(resp.url)
-            except Exception:
-                pass
-
-        page = context.new_page()
-        page.on("console", on_console)
-        context.on("request", on_request)
-        context.on("response", on_response)
-
-        try:
-            page.goto(normalized_url, wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle", timeout=12000)
-        except PWTimeout:
-            note("networkidle_timeout")
-
-        # הורדה ישירה מה-API
-        def direct_api(u: str) -> Optional[Tuple[str, bytes]]:
-            try:
-                resp = context.request.get(u, headers={"Referer": normalized_url})
-                body = resp.body()
-                ct = (resp.headers.get("content-type") or "").lower()
-                if (ct and "pdf" in ct) or body[:4] == b"%PDF":
-                    name = "bezeq_invoice_api.pdf"
-                    # ננסה להוסיף InvoiceId לשם
-                    q = parse_qs(urlparse(u).query)
-                    inv_id = (q.get("InvoiceId") or [""])[0]
-                    cd = resp.headers.get("content-disposition") or ""
-                    m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
-                    if m:
-                        name = sanitize_filename(m.group(1))
-                        if not name.lower().endswith(".pdf"):
-                            name += ".pdf"
-                    if inv_id:
-                        stem, ext = os.path.splitext(name)
-                        name = f"{stem}__{inv_id}{ext or '.pdf'}"
-                    return name, body
-            except Exception as e:
-                note(f"direct_api_err:{e}")
-            return None
-
-        # אם כבר נתפסו URL-ים – ננסה
-        for u in list(dict.fromkeys(api_urls)):
-            r = direct_api(u)
-            if r:
-                name, blob = r
-                res["ok"] = True
-                res["path"] = (name, blob)
-                break
-
-        # טריגר עדין (למקרה שלא נתפס מייד)
-        if not res["ok"]:
-            try:
-                for sel in [
-                    'text="להורדה"',
-                    "text=להורדה",
-                    'text="לצפייה"',
-                    "text=לצפייה",
-                    '[aria-label*="הורדה"]',
-                    '[title*="הורדה"]',
-                ]:
-                    try:
-                        page.locator(sel).first.click(timeout=2000)
-                        time.sleep(1.0)
-                        break
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+            # אם כבר נתפסו URL-ים – ננסה
             for u in list(dict.fromkeys(api_urls)):
                 r = direct_api(u)
                 if r:
@@ -535,13 +524,49 @@ def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
                     res["path"] = (name, blob)
                     break
 
-        if keep_trace:
-            try:
-                context.tracing.stop(path=os.path.join(out_dir, f"bezeq_trace_{now_stamp()}.zip"))
-            except Exception:
-                pass
-        context.close()
-        browser.close()
+            # טריגר עדין (למקרה שלא נתפס מייד)
+            if not res["ok"]:
+                try:
+                    for sel in [
+                        'text="להורדה"',
+                        "text=להורדה",
+                        'text="לצפייה"',
+                        "text=לצפייה",
+                        '[aria-label*="הורדה"]',
+                        '[title*="הורדה"]',
+                    ]:
+                        try:
+                            page.locator(sel).first.click(timeout=2000)
+                            time.sleep(1.0)
+                            break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                for u in list(dict.fromkeys(api_urls)):
+                    r = direct_api(u)
+                    if r:
+                        name, blob = r
+                        res["ok"] = True
+                        res["path"] = (name, blob)
+                        break
+
+            if keep_trace:
+                try:
+                    context.tracing.stop(
+                        path=os.path.join(out_dir, f"bezeq_trace_{now_stamp()}.zip")
+                    )
+                except Exception:
+                    pass
+            context.close()
+            browser.close()
+    except Exception as exc:
+        msg = str(exc)
+        note(f"playwright_error:{msg}")
+        if "executable doesn't exist" in msg.lower() or "playwright install" in msg.lower():
+            note(
+                "playwright chromium browser missing; run `playwright install chromium` and retry."
+            )
 
     return res
 

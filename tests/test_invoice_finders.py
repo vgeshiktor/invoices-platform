@@ -90,6 +90,13 @@ def _stub_external_dependencies():
 
     transport_mod.Request = DummyRequest  # type: ignore[attr-defined]
 
+    exceptions_mod = _ensure_module("google.auth.exceptions")
+
+    class DummyRefreshError(Exception):
+        pass
+
+    exceptions_mod.RefreshError = DummyRefreshError  # type: ignore[attr-defined]
+
     discovery_mod = _ensure_module("googleapiclient.discovery")
 
     def _dummy_build(*args, **kwargs):
@@ -210,3 +217,83 @@ def test_gmail_load_existing_hash_index(tmp_path):
     digest_b = hashlib.sha256(b"B").hexdigest()
     assert digest_a in index and Path(index[digest_a]).name in {"a.pdf", "dup.pdf"}
     assert digest_b in index and Path(index[digest_b]).name == "b.pdf"
+
+
+def test_gmail_existing_stems_and_tagged_name(tmp_path):
+    invoices_dir = tmp_path / "inv"
+    invoices_dir.mkdir()
+    (invoices_dir / "link_invoice__abc.pdf").write_bytes(b"A")
+    (invoices_dir / "link_invoice__abc__2.pdf").write_bytes(b"B")
+    (invoices_dir / "_tmp").mkdir()
+    (invoices_dir / "_tmp" / "skip.pdf").write_bytes(b"C")
+    stems = GMAIL.load_existing_stems(str(invoices_dir))
+    assert "link_invoice__abc" in stems
+    assert len(stems) == 1
+
+    tagged, stem = GMAIL.build_tagged_name("link_invoice.pdf", "xyz")
+    assert tagged.endswith("__xyz.pdf")
+    assert stem == "link_invoice__xyz"
+
+
+def test_gmail_decide_pdf_relevance_rejects_weak_only(tmp_path):
+    # Monkeypatch pdf stats to simulate weak-only vs invoice-like PDFs.
+    orig = GMAIL.pdf_keyword_stats
+
+    def fake_stats_weak(_path: str):
+        return {
+            "pos_hits": 1,
+            "neg_hits": 0,
+            "strong_hits": 0,
+            "weak_hits": 1,
+            "pos_terms": ["חשבונית"],
+            "neg_terms": [],
+            "amount_hint": False,
+            "invoice_id_hint": False,
+        }
+
+    def fake_stats_invoice(_path: str):
+        return {
+            "pos_hits": 1,
+            "neg_hits": 0,
+            "strong_hits": 0,
+            "weak_hits": 1,
+            "pos_terms": ["חשבונית"],
+            "neg_terms": [],
+            "amount_hint": True,
+            "invoice_id_hint": True,
+        }
+
+    GMAIL.pdf_keyword_stats = fake_stats_weak  # type: ignore[assignment]
+    ok, stats = GMAIL.decide_pdf_relevance("dummy.pdf")
+    assert not ok
+
+    GMAIL.pdf_keyword_stats = fake_stats_invoice  # type: ignore[assignment]
+    ok2, stats2 = GMAIL.decide_pdf_relevance("dummy.pdf")
+    assert ok2
+    assert stats2.get("invoice_id_hint") is True
+
+    GMAIL.pdf_keyword_stats = orig  # type: ignore[assignment]
+
+
+def test_pdf_text_fingerprint_same_text_diff_bytes(tmp_path):
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        pytest.skip("PyMuPDF not available")
+
+    def make_pdf(path, text):
+        doc = fitz.open()  # type: ignore[attr-defined]
+        page = doc.new_page()
+        page.insert_text((72, 72), text)
+        doc.save(path)
+
+    text = "Invoice 123\nTotal 10.00\nThank you"
+    p1 = tmp_path / "a.pdf"
+    p2 = tmp_path / "b.pdf"
+    make_pdf(p1, text)
+    make_pdf(p2, text)  # separate save -> typically different bytes (metadata)
+
+    fp1 = domain_pdf.text_fingerprint(str(p1))
+    fp2 = domain_pdf.text_fingerprint(str(p2))
+    assert fp1 and fp2 and fp1 == fp2
+    assert p1.read_bytes() != p2.read_bytes()  # sanity: bytes differ

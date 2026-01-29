@@ -75,6 +75,7 @@ from google.auth.transport.requests import Request as GReq
 from googleapiclient.discovery import build
 
 import requests
+from google.auth.exceptions import RefreshError
 from bs4 import BeautifulSoup
 
 # Playwright (לבזק)
@@ -116,6 +117,7 @@ HEB_POS = domain_constants.HEB_POS
 EN_NEG = domain_constants.EN_NEG
 HEB_NEG = domain_constants.HEB_NEG
 TRUSTED_PROVIDERS = domain_constants.TRUSTED_PROVIDERS
+TRUSTED_SENDER_DOMAINS = domain_constants.TRUSTED_SENDER_DOMAINS
 is_municipal_text = domain_relevance.is_municipal_text
 body_has_negative = domain_relevance.body_has_negative
 body_has_positive = domain_relevance.body_has_positive
@@ -126,12 +128,27 @@ YES_DOMAINS = ["yes.co.il", "www.yes.co.il", "svc.yes.co.il"]
 # --------------------------- PDF verification ---------------------------
 pdf_keyword_stats = domain_pdf.pdf_keyword_stats
 pdf_confidence = domain_pdf.pdf_confidence
+pdf_text_fingerprint = domain_pdf.text_fingerprint
+HAVE_PYMUPDF = getattr(domain_pdf, "HAVE_PYMUPDF", False)
 
 
 def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, Dict]:
     stats = pdf_keyword_stats(path)
-    ok = stats["pos_hits"] >= 1 and stats["neg_hits"] == 0
-    if trusted_hint and stats["neg_hits"] == 0 and stats["pos_hits"] == 0:
+    pos_hits = stats.get("pos_hits", 0) or 0
+    neg_hits = stats.get("neg_hits", 0) or 0
+    strong_hits = stats.get("strong_hits", pos_hits) or 0
+    amount_hint = stats.get("amount_hint")
+    invoice_id_hint = stats.get("invoice_id_hint")
+    weak_only = pos_hits > 0 and strong_hits == 0
+
+    ok = pos_hits >= 1 and neg_hits == 0
+    if ok and weak_only:
+        # Weak-only hits (e.g., lone "חשבונית") must also look invoice-like.
+        if not HAVE_PYMUPDF:
+            ok = True  # cannot re-evaluate structure without PDF text
+        else:
+            ok = bool(invoice_id_hint and (amount_hint is None or amount_hint))
+    if trusted_hint and not pos_hits and neg_hits == 0:
         ok = True
     return ok, stats
 
@@ -144,8 +161,13 @@ class GmailClient:  # pragma: no cover - requires live Google OAuth
             self.creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         if not self.creds or not self.creds.valid:
             if self.creds and self.creds.expired and self.creds.refresh_token:
-                self.creds.refresh(GReq())
-            else:
+                try:
+                    self.creds.refresh(GReq())
+                except RefreshError:
+                    self.creds = None
+                except Exception:
+                    self.creds = None
+            if not self.creds or not self.creds.valid:
                 flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
                 self.creds = flow.run_local_server(
                     host="localhost",
@@ -321,6 +343,21 @@ def normalize_link(u: str) -> str:
     return u
 
 
+def sender_domain(address: str) -> str:
+    if not address:
+        return ""
+    m = re.search(r"<([^>]+)>", address)
+    email = (m.group(1) if m else address).strip().lower()
+    if "@" not in email:
+        return ""
+    return email.split("@")[-1]
+
+
+def is_trusted_sender(address: str) -> bool:
+    domain = sender_domain(address)
+    return bool(domain and any(domain.endswith(d) for d in TRUSTED_SENDER_DOMAINS))
+
+
 def _decode_data_url(data_url: str) -> Optional[bytes]:
     m = re.match(r"data:([^;]+);base64,(.+)", data_url, flags=re.I)
     if not m:
@@ -357,6 +394,50 @@ def load_existing_hash_index(inv_dir: str) -> Dict[str, str]:
             if digest and digest not in index:
                 index[digest] = path
     return index
+
+
+def normalized_stem(name: str) -> str:
+    stem = os.path.splitext(os.path.basename(name))[0]
+    m = re.match(r"^(.*)__\d+$", stem)
+    return m.group(1) if m else stem
+
+
+def load_existing_stems(inv_dir: str) -> Set[str]:
+    stems: Set[str] = set()
+    if not os.path.isdir(inv_dir):
+        return stems
+    for root, dirs, files in os.walk(inv_dir):
+        dirs[:] = [d for d in dirs if d not in {"_tmp", "quarantine", "duplicates"}]
+        for name in files:
+            if not name.lower().endswith(".pdf"):
+                continue
+            stems.add(normalized_stem(name))
+    return stems
+
+
+def load_existing_text_fps(inv_dir: str) -> Dict[str, str]:
+    fps: Dict[str, str] = {}
+    if not HAVE_PYMUPDF or not os.path.isdir(inv_dir):
+        return fps
+    for root, dirs, files in os.walk(inv_dir):
+        dirs[:] = [d for d in dirs if d not in {"_tmp", "quarantine", "duplicates"}]
+        for name in files:
+            if not name.lower().endswith(".pdf"):
+                continue
+            path = os.path.join(root, name)
+            fp = pdf_text_fingerprint(path)
+            if fp and fp not in fps:
+                fps[fp] = path
+    return fps
+
+
+def build_tagged_name(name: str, msg_tag: str) -> Tuple[str, str]:
+    safe = sanitize_filename(name)
+    stem, ext = os.path.splitext(safe)
+    if not ext:
+        ext = ".pdf"
+    tagged = f"{stem}__{msg_tag}{ext}"
+    return tagged, normalized_stem(tagged)
 
 
 # --------------------------- Direct PDF via requests ---------------------------
@@ -781,6 +862,14 @@ def main():  # pragma: no cover - CLI orchestration
     if existing_index:
         seen_hashes.update(existing_index.keys())
         hash_to_saved_path.update(existing_index)
+    existing_stems = load_existing_stems(inv_dir)
+    existing_fps = load_existing_text_fps(inv_dir)
+    if existing_fps:
+        seen_text_fps: Set[str] = set(existing_fps.keys())
+        text_fp_to_path: Dict[str, str] = dict(existing_fps)
+    else:
+        seen_text_fps = set()
+        text_fp_to_path = {}
 
     def record_candidate(entry: Dict) -> None:
         if args.save_candidates:
@@ -822,6 +911,7 @@ def main():  # pragma: no cover - CLI orchestration
         internal_ts = int(msg.get("internalDate", "0")) // 1000
         received = dt.datetime.utcfromtimestamp(internal_ts).isoformat() if internal_ts else ""
         snippet = msg.get("snippet") or ""
+        sender_trusted = is_trusted_sender(from_addr)
 
         logging.info(f"[{idx}] {subject} | {from_addr} | {received}")
 
@@ -885,12 +975,38 @@ def main():  # pragma: no cover - CLI orchestration
                 with open(tmp_path, "wb") as f:
                     f.write(blob)
 
-                trusted_hint = False
+                trusted_hint = sender_trusted
                 if args.verify:
                     ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
                 else:
                     ok, stats = True, {"pos_hits": 1, "neg_hits": 0}
                 confidence = pdf_confidence(stats)
+
+                text_fp = pdf_text_fingerprint(tmp_path) if HAVE_PYMUPDF else None
+                candidate["text_fingerprint"] = text_fp
+
+                if text_fp:
+                    if text_fp in seen_text_fps:
+                        dup_path = text_fp_to_path.get(text_fp)
+                        download_report.append(
+                            {
+                                "msg_id": msg_id,
+                                "type": "attachment",
+                                "name": filename,
+                                "skip": "duplicate_text",
+                                **({"duplicate_of": dup_path} if dup_path else {}),
+                            }
+                        )
+                        candidate.update(
+                            {
+                                "decision": "skip",
+                                "reason": "duplicate_text",
+                                **({"duplicate_of": dup_path} if dup_path else {}),
+                            }
+                        )
+                        record_candidate(candidate)
+                        os.remove(tmp_path)
+                        continue
                 candidate.update(
                     {"stats": stats, "confidence": confidence, "trusted_hint": trusted_hint}
                 )
@@ -933,6 +1049,9 @@ def main():  # pragma: no cover - CLI orchestration
                 os.replace(tmp_path, out_path)
                 seen_hashes.add(h)
                 hash_to_saved_path[h] = out_path
+                if text_fp:
+                    seen_text_fps.add(text_fp)
+                    text_fp_to_path[text_fp] = out_path
                 download_report.append(
                     {
                         "msg_id": msg_id,
@@ -1030,13 +1149,38 @@ def main():  # pragma: no cover - CLI orchestration
                     with open(tmp_path, "wb") as f:
                         f.write(blob)
 
-                    trusted_hint = within_domain(u, TRUSTED_PROVIDERS) or is_municipal_text(
-                        subject + " " + snippet
+                    trusted_hint = (
+                        sender_trusted
+                        or within_domain(u, TRUSTED_PROVIDERS)
+                        or is_municipal_text(subject + " " + snippet)
                     )
                     ok, stats = (True, {"pos_hits": 1, "neg_hits": 0})
                     if args.verify:
                         ok, stats = decide_pdf_relevance(tmp_path, trusted_hint=trusted_hint)
                     confidence = pdf_confidence(stats)
+                    text_fp = pdf_text_fingerprint(tmp_path) if HAVE_PYMUPDF else None
+                    candidate["text_fingerprint"] = text_fp
+                    if text_fp and text_fp in seen_text_fps:
+                        dup_path = text_fp_to_path.get(text_fp)
+                        download_report.append(
+                            {
+                                "msg_id": msg_id,
+                                "type": "link",
+                                "url": u,
+                                "skip": "duplicate_text",
+                                **({"duplicate_of": dup_path} if dup_path else {}),
+                            }
+                        )
+                        candidate.update(
+                            {
+                                "decision": "skip",
+                                "reason": "duplicate_text",
+                                **({"duplicate_of": dup_path} if dup_path else {}),
+                            }
+                        )
+                        record_candidate(candidate)
+                        os.remove(tmp_path)
+                        continue
                     candidate.update(
                         {"stats": stats, "confidence": confidence, "trusted_hint": trusted_hint}
                     )
@@ -1075,10 +1219,30 @@ def main():  # pragma: no cover - CLI orchestration
                         record_candidate(candidate)
                         continue
 
-                    out_path = ensure_unique_path(inv_dir, name, tag=msg_tag)
+                    tagged_name, stem_key = build_tagged_name(name, msg_tag)
+                    if stem_key in existing_stems:
+                        os.remove(tmp_path)
+                        download_report.append(
+                            {
+                                "msg_id": msg_id,
+                                "type": "link",
+                                "url": u,
+                                "skip": "duplicate_stem",
+                                "stem": stem_key,
+                            }
+                        )
+                        candidate.update({"decision": "skip", "reason": "duplicate_stem"})
+                        record_candidate(candidate)
+                        continue
+
+                    out_path = ensure_unique_path(inv_dir, tagged_name)
                     os.replace(tmp_path, out_path)
                     seen_hashes.add(h)
                     hash_to_saved_path[h] = out_path
+                    existing_stems.add(stem_key)
+                    if text_fp:
+                        seen_text_fps.add(text_fp)
+                        text_fp_to_path[text_fp] = out_path
                     download_report.append(
                         {
                             "msg_id": msg_id,
@@ -1159,6 +1323,29 @@ def main():  # pragma: no cover - CLI orchestration
                         else:
                             ok, stats = True, {"pos_hits": 1, "neg_hits": 0}
                         confidence = pdf_confidence(stats)
+                        text_fp = pdf_text_fingerprint(tmp_path) if HAVE_PYMUPDF else None
+                        candidate["text_fingerprint"] = text_fp
+                        if text_fp and text_fp in seen_text_fps:
+                            dup_path = text_fp_to_path.get(text_fp)
+                            download_report.append(
+                                {
+                                    "msg_id": msg_id,
+                                    "type": "link",
+                                    "url": u,
+                                    "skip": "duplicate_text",
+                                    **({"duplicate_of": dup_path} if dup_path else {}),
+                                }
+                            )
+                            candidate.update(
+                                {
+                                    "decision": "skip",
+                                    "reason": "duplicate_text",
+                                    **({"duplicate_of": dup_path} if dup_path else {}),
+                                }
+                            )
+                            record_candidate(candidate)
+                            os.remove(tmp_path)
+                            continue
                         candidate.update(
                             {
                                 "stats": stats,
@@ -1203,14 +1390,34 @@ def main():  # pragma: no cover - CLI orchestration
                                         "confidence": confidence,
                                     }
                                 )
-                                candidate.update({"decision": "reject", "reason": "verify_failed"})
+                            candidate.update({"decision": "reject", "reason": "verify_failed"})
                             record_candidate(candidate)
                             continue
 
-                        out_path = ensure_unique_path(inv_dir, name, tag=msg_tag)
+                        tagged_name, stem_key = build_tagged_name(name, msg_tag)
+                        if stem_key in existing_stems:
+                            os.remove(tmp_path)
+                            download_report.append(
+                                {
+                                    "msg_id": msg_id,
+                                    "type": "link",
+                                    "url": u,
+                                    "skip": "duplicate_stem",
+                                    "stem": stem_key,
+                                }
+                            )
+                            candidate.update({"decision": "skip", "reason": "duplicate_stem"})
+                            record_candidate(candidate)
+                            continue
+
+                        out_path = ensure_unique_path(inv_dir, tagged_name)
                         os.replace(tmp_path, out_path)
                         seen_hashes.add(h)
                         hash_to_saved_path[h] = out_path
+                        existing_stems.add(stem_key)
+                        if text_fp:
+                            seen_text_fps.add(text_fp)
+                            text_fp_to_path[text_fp] = out_path
                         download_report.append(
                             {
                                 "msg_id": msg_id,

@@ -189,6 +189,14 @@ def test_normalize_myinvoice_url():
     )
 
 
+def test_sender_domain_and_trust_detection():
+    addr = "Rav-Pass by HopOn <support@ravpass.co.il>"
+    assert gmail.sender_domain(addr) == "ravpass.co.il"
+    assert gmail.is_trusted_sender(addr)
+    assert gmail.is_trusted_sender("support@ravpass.co.il")
+    assert not gmail.is_trusted_sender("alerts@example.com")
+
+
 def test_should_consider_message():
     assert gmail.should_consider_message("חשבונית מס קבלה", "")
     assert not gmail.should_consider_message("תלוש שכר", "")

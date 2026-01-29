@@ -65,3 +65,8 @@ TRUSTED_PROVIDERS = [
     "quickbooks.intuit.com",
     "stripe.com",
 ]
+
+TRUSTED_SENDER_DOMAINS = [
+    "ravpass.co.il",
+    "hopon.co.il",
+]

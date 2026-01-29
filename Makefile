@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report
+.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report run-monthly
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -43,7 +43,7 @@ START_DATE ?=
 END_DATE ?=
 
 GMAIL_INVOICES_DIR ?= invoices_gmail
-GMAIL_EXTRA_ARGS ?=
+GMAIL_EXTRA_ARGS ?= --save-candidates candidates_gmail.json --save-nonmatches rejected_gmail.json
 
 GRAPH_CLIENT_ID ?=
 GRAPH_AUTHORITY ?= consumers
@@ -51,7 +51,14 @@ GRAPH_INVOICES_DIR ?= invoices_outlook
 GRAPH_EXTRA_ARGS ?= --save-json invoices.json \
 	--save-csv invoices.csv \
     --download-report download_report.json \
-	--explain --verify
+	--explain --verify \
+	--save-candidates candidates_outlook.json --save-nonmatches rejected_outlook.json
+
+MONTHLY_BASE_DIR ?= invoices
+MONTHLY_PROVIDERS ?= gmail,outlook
+MONTHLY_GMAIL_ARGS ?= --exclude-sent --verify
+MONTHLY_GRAPH_ARGS ?= --exclude-sent --verify --explain
+MONTHLY_SEQUENTIAL ?=
 
 REPORT_INPUT_DIR ?= invoices_outlook
 REPORT_JSON_OUTPUT ?= invoice_report.json
@@ -85,3 +92,14 @@ run-report: ## Generate invoice report JSON/CSV from downloaded PDFs
 		--json-output $(REPORT_JSON_OUTPUT) \
 		--csv-output $(REPORT_CSV_OUTPUT) \
 		$(REPORT_EXTRA_ARGS)
+
+run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate under invoices/
+	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m invplatform.cli.monthly_invoices \
+		--providers "$(MONTHLY_PROVIDERS)" \
+		--base-dir $(MONTHLY_BASE_DIR) \
+		$(if $(MONTH),--month $(MONTH),) \
+		$(if $(YEAR),--year $(YEAR),) \
+		$(if $(MONTHLY_GMAIL_ARGS),--gmail-extra-args "$(MONTHLY_GMAIL_ARGS)",) \
+		$(if $(MONTHLY_GRAPH_ARGS),--graph-extra-args "$(MONTHLY_GRAPH_ARGS)",) \
+		$(if $(GRAPH_CLIENT_ID),--graph-client-id "$(GRAPH_CLIENT_ID)",) \
+		$(if $(MONTHLY_SEQUENTIAL),--sequential,)

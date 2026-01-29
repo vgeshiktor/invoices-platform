@@ -15,6 +15,7 @@ Docker Compose & Dev Container — one-command local dev
 PDFs are stored on a local volume during development; metadata goes to Postgres.
 
 ```
+
 invoices-platform/
 ├─ apps/
 │  ├─ api-go/
@@ -71,6 +72,7 @@ invoices-platform/
 └─ README.md
 
 ```
+
 CLI scripts (e.g., `python -m invplatform.cli.graph_invoice_finder`) now reuse helpers from `apps/workers-py/src/invplatform/domain`, and the `adapters` / `usecases` packages act as scaffolding for the upcoming orchestration layer.
 
 ## Email Discovery Toolkit
@@ -121,3 +123,15 @@ make run-graph START_DATE=2025-06-01 END_DATE=2025-07-01 GRAPH_CLIENT_ID=xxxxxxx
 # Manual invocation (Makefile already exports PYTHONPATH automatically)
 PYTHONPATH=apps/workers-py/src python -m invplatform.cli.gmail_invoice_finder --help
 ```
+
+### Current-month one-liner
+
+- Run both providers for the current month and consolidate PDFs:
+  `make run-monthly GRAPH_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+- Output layout under the repo root by default: `invoices/invoices_gmail_MM_YYYY`, `invoices/invoices_outlook_MM_YYYY`, and a merged `invoices/invoices_MM_YYYY` (with `run_summary.json`).
+- Parallel by default; force sequential with `MONTHLY_SEQUENTIAL=1`.
+- Backfill a specific month with `MONTH=10 YEAR=2025 make run-monthly ...`.
+- Narrow to a single provider with `MONTHLY_PROVIDERS=gmail` (or `outlook`).
+- Forward extra CLI flags per provider:
+  `MONTHLY_GMAIL_ARGS="--exclude-sent --verify"` and
+  `MONTHLY_GRAPH_ARGS="--exclude-sent --verify --explain"`.
