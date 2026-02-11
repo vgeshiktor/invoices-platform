@@ -135,6 +135,23 @@ PYTHONPATH=apps/workers-py/src python -m invplatform.cli.gmail_invoice_finder --
 - Forward extra CLI flags per provider:
   `MONTHLY_GMAIL_ARGS="--exclude-sent --verify"` and
   `MONTHLY_GRAPH_ARGS="--exclude-sent --verify --explain"`.
+- Clean up existing folders by quarantining non-invoice PDFs:
+  `make quarantine` (defaults to `invoices/`).
+
+### Quarantine cleanup (local)
+
+Use the quarantine helper to scan existing PDFs and move non-invoices into `quarantine/`:
+
+```bash
+make quarantine
+```
+
+Scan a specific folder or dry run:
+
+```bash
+PYTHONPATH=apps/workers-py/src python -m invplatform.cli.quarantine_invoices \
+  --input-dir invoices/invoices_gmail_01_2026 --dry-run
+```
 
 ### Local n8n scheduler (MVP)
 

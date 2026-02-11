@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report run-monthly run-n8n
+.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report run-monthly run-n8n quarantine
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -106,3 +106,6 @@ run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate 
 
 run-n8n: ## Start n8n (dev compose only)
 	docker compose -f deploy/compose/docker-compose.dev.yml up -d --build n8n
+
+quarantine: ## Move non-invoice PDFs into quarantine/
+	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m invplatform.cli.quarantine_invoices

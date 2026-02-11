@@ -17,8 +17,8 @@ except Exception:  # pragma: no cover - optional dependency
     HAVE_PYMUPDF = False
 
 
-STRONG_POS = set(constants.EN_POS + constants.HEB_POS) - {"חשבונית"}
-WEAK_POS = {"חשבונית"}
+STRONG_POS = set(constants.EN_POS + constants.HEB_POS) - {"חשבונית", "קבלה"}
+WEAK_POS = {"חשבונית", "קבלה"}
 
 
 def text_has_amount_hint(text: str) -> bool:

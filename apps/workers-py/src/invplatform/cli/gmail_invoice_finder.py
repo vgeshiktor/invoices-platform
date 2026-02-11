@@ -143,11 +143,11 @@ def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, D
 
     ok = pos_hits >= 1 and neg_hits == 0
     if ok and weak_only:
-        # Weak-only hits (e.g., lone "חשבונית") must also look invoice-like.
+        # Weak-only hits (e.g., lone "חשבונית"/"קבלה") must also look invoice-like.
         if not HAVE_PYMUPDF:
             ok = True  # cannot re-evaluate structure without PDF text
         else:
-            ok = bool(invoice_id_hint and (amount_hint is None or amount_hint))
+            ok = bool(amount_hint or invoice_id_hint)
     if trusted_hint and not pos_hits and neg_hits == 0:
         ok = True
     return ok, stats
