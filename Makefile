@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report run-monthly
+.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report run-monthly run-n8n
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -103,3 +103,6 @@ run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate 
 		$(if $(MONTHLY_GRAPH_ARGS),--graph-extra-args "$(MONTHLY_GRAPH_ARGS)",) \
 		$(if $(GRAPH_CLIENT_ID),--graph-client-id "$(GRAPH_CLIENT_ID)",) \
 		$(if $(MONTHLY_SEQUENTIAL),--sequential,)
+
+run-n8n: ## Start n8n (dev compose only)
+	docker compose -f deploy/compose/docker-compose.dev.yml up -d --build n8n

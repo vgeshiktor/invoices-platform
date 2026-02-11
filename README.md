@@ -135,3 +135,21 @@ PYTHONPATH=apps/workers-py/src python -m invplatform.cli.gmail_invoice_finder --
 - Forward extra CLI flags per provider:
   `MONTHLY_GMAIL_ARGS="--exclude-sent --verify"` and
   `MONTHLY_GRAPH_ARGS="--exclude-sent --verify --explain"`.
+
+### Local n8n scheduler (MVP)
+
+Goal: run `make run-monthly` daily via n8n, no extra services.
+
+1) Start n8n (dev compose only):
+   `make run-n8n`
+2) Open `http://localhost:5678` and create a workflow:
+   - Trigger: Cron (daily at your preferred time).
+   - Action: Execute Command
+     - Command: `make -C /workspace run-monthly MONTHLY_PROVIDERS=gmail`
+3) Ensure Gmail OAuth files exist in the repo root:
+   - `credentials.json` and `token.json` (generate once locally on the host if needed).
+   - The n8n container cannot open a browser for OAuth; run a local Gmail auth once to create a refreshable `token.json`.
+
+Notes:
+- The n8n container mounts the repo at `/workspace`, so outputs land in `invoices/` under the repo root.
+- To run Gmail-only, use `MONTHLY_PROVIDERS=gmail`. For Outlook, set `GRAPH_CLIENT_ID`.

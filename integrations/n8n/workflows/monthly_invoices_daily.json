@@ -1,0 +1,53 @@
+{
+  "name": "Daily Monthly Invoices",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": [
+          {
+            "mode": "everyDay",
+            "hour": 6,
+            "minute": 0
+          }
+        ]
+      },
+      "id": "b2d6a3b9-98e7-4a8e-9e9d-4ff2b0b7a2c1",
+      "name": "Daily 06:00",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "make -C /workspace run-monthly MONTHLY_PROVIDERS=gmail"
+      },
+      "id": "7a9d5f4d-3d5b-4c20-9fd7-6b9eaa0f5d3f",
+      "name": "Run Monthly Invoices",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 06:00": {
+      "main": [
+        [
+          {
+            "node": "Run Monthly Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "6a0f4a8b-b57b-4b4f-9aa8-44f8c0339d3a"
+}

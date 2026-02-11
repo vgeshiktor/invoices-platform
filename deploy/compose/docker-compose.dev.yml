@@ -17,11 +17,20 @@ services:
     depends_on: [db, mq]
 
   n8n:
-    image: n8nio/n8n:latest
+    build:
+      context: ../../
+      dockerfile: integrations/n8n/Dockerfile
     env_file: ["../../integrations/n8n/n8n.env.example"]
+    environment:
+      N8N_USER_FOLDER: /home/node/.n8n
+      NODES_EXCLUDE: '["n8n-nodes-base.localFileTrigger"]'
+      PYTHONPATH: /workspace/apps/workers-py/src
+      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID}
+    user: "root"
     ports: ["5678:5678"]
     volumes:
       - n8n_data:/home/node/.n8n
+      - ../../:/workspace
     depends_on: [db, mq]
 
   db:
