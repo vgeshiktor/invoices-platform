@@ -20,12 +20,15 @@ MUNICIPAL_TEXT = (FIXTURES_DIR / "municipal_8Uhc.txt").read_text(encoding="utf-8
 def test_invoice_record_to_csv_row_formats_numbers():
     record = report.InvoiceRecord(
         source_file="sample.pdf",
+        base_before_vat=100.0,
         invoice_total=123.456,
         invoice_vat=None,
         notes="ok",
     )
-    row = record.to_csv_row(["source_file", "invoice_total", "invoice_vat", "notes"])
-    assert row == ["sample.pdf", "123.46", "", "ok"]
+    row = record.to_csv_row(
+        ["source_file", "base_before_vat", "invoice_vat", "invoice_total", "notes"]
+    )
+    assert row == ["sample.pdf", "100.00", "", "123.46", "ok"]
 
 
 def test_normalize_parse_and_select_amounts():
@@ -282,7 +285,9 @@ def test_generate_report_and_writers(tmp_path, monkeypatch):
     report.write_csv(records, csv_path)
     loaded = json.loads(json_path.read_text(encoding="utf-8"))
     assert loaded[0]["invoice_total"] == 10.0
-    assert "source_file" in csv_path.read_text(encoding="utf-8")
+    header = csv_path.read_text(encoding="utf-8").splitlines()[0].split(",")
+    assert header.index("base_before_vat") < header.index("invoice_vat")
+    assert header.index("invoice_vat") < header.index("invoice_total")
 
 
 def test_infer_invoice_for_handles_details_marker():

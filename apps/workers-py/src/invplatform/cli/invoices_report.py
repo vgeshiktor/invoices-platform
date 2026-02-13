@@ -86,13 +86,13 @@ class InvoiceRecord:
     invoice_date: Optional[str] = None
     invoice_from: Optional[str] = None
     invoice_for: Optional[str] = None
-    invoice_total: Amount = None
+    base_before_vat: Amount = None
     invoice_vat: Amount = None
+    invoice_total: Amount = None
     currency: Optional[str] = "₪"
     notes: Optional[str] = None
     breakdown_sum: Amount = None
     breakdown_values: Optional[List[float]] = None
-    base_before_vat: Amount = None
     vat_rate: Optional[float] = None
     period_start: Optional[str] = None
     period_end: Optional[str] = None
@@ -1823,13 +1823,13 @@ def write_csv(records: List[InvoiceRecord], output_path: Path) -> None:
         "invoice_date",
         "invoice_from",
         "invoice_for",
-        "invoice_total",
+        "base_before_vat",
         "invoice_vat",
+        "invoice_total",
         "currency",
         "breakdown_sum",
         "breakdown_values",
         "notes",
-        "base_before_vat",
         "vat_rate",
         "period_start",
         "period_end",
