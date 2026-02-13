@@ -124,6 +124,22 @@ make run-graph START_DATE=2025-06-01 END_DATE=2025-07-01 GRAPH_CLIENT_ID=xxxxxxx
 PYTHONPATH=apps/workers-py/src python -m invplatform.cli.gmail_invoice_finder --help
 ```
 
+## Generate invoice reports
+
+Use the report CLI (or Make target) to parse downloaded PDFs into JSON/CSV, plus a summary CSV with totals:
+
+```bash
+make run-report REPORT_INPUT_DIR=invoices/invoices_outlook_01_2026
+```
+
+Outputs by default:
+
+- `reports/invoice_report.json`
+- `reports/invoice_report.csv`
+- `reports/invoice_report.summary.csv` (totals for `invoice_vat` and `invoice_total`)
+
+Override the summary output path with `REPORT_SUMMARY_CSV_OUTPUT=reports/custom_summary.csv`.
+
 ### Current-month one-liner
 
 - Run both providers for the current month and consolidate PDFs:

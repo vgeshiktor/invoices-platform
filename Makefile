@@ -65,6 +65,7 @@ MONTHLY_SEQUENTIAL ?=
 REPORT_INPUT_DIR ?= invoices_outlook
 REPORT_JSON_OUTPUT ?= reports/invoice_report.json
 REPORT_CSV_OUTPUT ?= reports/invoice_report.csv
+REPORT_SUMMARY_CSV_OUTPUT ?= reports/invoice_report.summary.csv
 REPORT_EXTRA_ARGS ?=
 
 run-gmail: ## הרצת Gmail invoice finder (נדרש START_DATE ו-END_DATE)
@@ -93,6 +94,7 @@ run-report: ## Generate invoice report JSON/CSV from downloaded PDFs
 		--input-dir $(REPORT_INPUT_DIR) \
 		--json-output $(REPORT_JSON_OUTPUT) \
 		--csv-output $(REPORT_CSV_OUTPUT) \
+		--summary-csv-output $(REPORT_SUMMARY_CSV_OUTPUT) \
 		$(REPORT_EXTRA_ARGS)
 
 run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate under invoices/

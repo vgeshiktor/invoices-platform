@@ -83,6 +83,7 @@ def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
 def test_cli_writes_vat_fields_in_order(monkeypatch, tmp_path):
     json_out = tmp_path / "report.json"
     csv_out = tmp_path / "report.csv"
+    summary_out = tmp_path / "report.summary.csv"
     dummy_pdf = tmp_path / "sample.pdf"
     dummy_pdf.write_text("stub")
 
@@ -107,6 +108,8 @@ def test_cli_writes_vat_fields_in_order(monkeypatch, tmp_path):
         str(json_out),
         "--csv-output",
         str(csv_out),
+        "--summary-csv-output",
+        str(summary_out),
     ]
     monkeypatch.setattr(sys, "argv", argv)
 
@@ -114,6 +117,7 @@ def test_cli_writes_vat_fields_in_order(monkeypatch, tmp_path):
     header = csv_out.read_text(encoding="utf-8").splitlines()[0].split(",")
     assert header.index("base_before_vat") < header.index("invoice_vat")
     assert header.index("invoice_vat") < header.index("invoice_total")
+    assert summary_out.exists()
 
 
 def test_arnona_invoice_extracts_period_and_details(monkeypatch):

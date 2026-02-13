@@ -1812,6 +1812,7 @@ def generate_report(
 
 
 def write_json(records: List[InvoiceRecord], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fh:
         json.dump([asdict(rec) for rec in records], fh, ensure_ascii=False, indent=2)
 
@@ -1844,11 +1845,151 @@ def write_csv(records: List[InvoiceRecord], output_path: Path) -> None:
         "municipal",
         "duplicate_hash",
     ]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(fields)
         for record in records:
             writer.writerow(record.to_csv_row(fields))
+
+
+def write_summary_csv(
+    totals: Dict[str, Dict[str, Optional[float] | int]], output_path: Path
+) -> None:
+    def fmt(value: Optional[float] | int) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, float):
+            return f"{value:.2f}"
+        return str(value)
+
+    fields = [
+        "metric",
+        "sum",
+        "abs_sum",
+        "count",
+        "missing",
+        "zero",
+        "negative",
+        "positive",
+        "min",
+        "max",
+        "avg",
+    ]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(fields)
+        records_info = totals.get("records", {})
+        writer.writerow(
+            [
+                "records",
+                "",
+                "",
+                fmt(records_info.get("count")),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        for metric in ("invoice_vat", "invoice_total"):
+            info = totals.get(metric, {})
+            writer.writerow(
+                [
+                    metric,
+                    fmt(info.get("sum")),
+                    fmt(info.get("abs_sum")),
+                    fmt(info.get("count")),
+                    fmt(info.get("missing")),
+                    fmt(info.get("zero")),
+                    fmt(info.get("negative")),
+                    fmt(info.get("positive")),
+                    fmt(info.get("min")),
+                    fmt(info.get("max")),
+                    fmt(info.get("avg")),
+                ]
+            )
+
+
+def compute_report_totals(
+    records: Sequence[InvoiceRecord],
+) -> Dict[str, Dict[str, Optional[float] | int]]:
+    def stats_for(field: str) -> Dict[str, Optional[float]]:
+        total = 0.0
+        abs_total = 0.0
+        count = 0
+        missing = 0
+        zero = 0
+        negative = 0
+        positive = 0
+        min_val: Optional[float] = None
+        max_val: Optional[float] = None
+        for record in records:
+            value = getattr(record, field, None)
+            if value is None:
+                missing += 1
+                continue
+            if value == 0:
+                zero += 1
+                continue
+            count += 1
+            total += value
+            abs_total += abs(value)
+            if value < 0:
+                negative += 1
+            else:
+                positive += 1
+            if min_val is None or value < min_val:
+                min_val = value
+            if max_val is None or value > max_val:
+                max_val = value
+        avg = round(total / count, 2) if count else None
+        return {
+            "sum": round(total, 2),
+            "abs_sum": round(abs_total, 2),
+            "count": count,
+            "missing": missing,
+            "zero": zero,
+            "negative": negative,
+            "positive": positive,
+            "min": min_val,
+            "max": max_val,
+            "avg": avg,
+        }
+
+    return {
+        "records": {"count": len(records)},
+        "invoice_vat": stats_for("invoice_vat"),
+        "invoice_total": stats_for("invoice_total"),
+    }
+
+
+def print_report_totals(totals: Dict[str, Dict[str, Optional[float]]]) -> None:
+    def fmt(val: Optional[float]) -> str:
+        if val is None:
+            return "n/a"
+        if isinstance(val, float):
+            return f"{val:.2f}"
+        return str(val)
+
+    print("Totals (non-zero values):")
+    for field in ("invoice_vat", "invoice_total"):
+        info = totals.get(field, {})
+        print(
+            f"  {field}: sum={fmt(info.get('sum'))} "
+            f"(count={int(info.get('count') or 0)}, "
+            f"missing={int(info.get('missing') or 0)}, "
+            f"zero={int(info.get('zero') or 0)}, "
+            f"negative={int(info.get('negative') or 0)}, "
+            f"avg={fmt(info.get('avg'))}, "
+            f"min={fmt(info.get('min'))}, "
+            f"max={fmt(info.get('max'))}, "
+            f"abs_sum={fmt(info.get('abs_sum'))})"
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -1867,6 +2008,11 @@ def parse_args() -> argparse.Namespace:
         "--csv-output",
         default="invoice_report.csv",
         help="Path for CSV report (default: invoice_report.csv)",
+    )
+    parser.add_argument(
+        "--summary-csv-output",
+        default=None,
+        help="Path for summary CSV totals (default: <csv-output>.summary.csv)",
     )
     parser.add_argument(
         "--debug",
@@ -1889,10 +2035,20 @@ def main() -> None:
     selected = args.files if args.files else None
     records = generate_report(input_dir, selected_files=selected, debug=args.debug)
     write_json(records, Path(args.json_output))
-    write_csv(records, Path(args.csv_output))
+    csv_path = Path(args.csv_output)
+    write_csv(records, csv_path)
     print(
         f"Generated {len(records)} records → {args.json_output}, {args.csv_output}",
     )
+    totals = compute_report_totals(records)
+    print_report_totals(totals)
+    summary_path = (
+        Path(args.summary_csv_output)
+        if args.summary_csv_output
+        else csv_path.with_suffix(".summary.csv")
+    )
+    write_summary_csv(totals, summary_path)
+    print(f"Summary totals → {summary_path}")
 
 
 if __name__ == "__main__":  # pragma: no cover

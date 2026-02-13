@@ -290,6 +290,96 @@ def test_generate_report_and_writers(tmp_path, monkeypatch):
     assert header.index("invoice_vat") < header.index("invoice_total")
 
 
+def test_compute_report_totals_skips_missing_and_zero():
+    records = [
+        report.InvoiceRecord(
+            source_file="a.pdf", invoice_total=100.0, invoice_vat=17.0
+        ),
+        report.InvoiceRecord(source_file="b.pdf", invoice_total=0.0, invoice_vat=0.0),
+        report.InvoiceRecord(source_file="c.pdf", invoice_total=None, invoice_vat=None),
+        report.InvoiceRecord(
+            source_file="d.pdf", invoice_total=-20.0, invoice_vat=-3.0
+        ),
+    ]
+    totals = report.compute_report_totals(records)
+    assert totals["records"]["count"] == 4
+    assert totals["invoice_total"]["sum"] == pytest.approx(80.0)
+    assert totals["invoice_total"]["count"] == 2
+    assert totals["invoice_total"]["missing"] == 1
+    assert totals["invoice_total"]["zero"] == 1
+    assert totals["invoice_total"]["negative"] == 1
+    assert totals["invoice_total"]["positive"] == 1
+    assert totals["invoice_total"]["abs_sum"] == pytest.approx(120.0)
+    assert totals["invoice_total"]["avg"] == pytest.approx(40.0)
+    assert totals["invoice_total"]["min"] == pytest.approx(-20.0)
+    assert totals["invoice_total"]["max"] == pytest.approx(100.0)
+
+    assert totals["invoice_vat"]["sum"] == pytest.approx(14.0)
+    assert totals["invoice_vat"]["count"] == 2
+    assert totals["invoice_vat"]["missing"] == 1
+    assert totals["invoice_vat"]["zero"] == 1
+    assert totals["invoice_vat"]["negative"] == 1
+    assert totals["invoice_vat"]["positive"] == 1
+    assert totals["invoice_vat"]["abs_sum"] == pytest.approx(20.0)
+    assert totals["invoice_vat"]["avg"] == pytest.approx(7.0)
+    assert totals["invoice_vat"]["min"] == pytest.approx(-3.0)
+    assert totals["invoice_vat"]["max"] == pytest.approx(17.0)
+
+
+def test_write_summary_csv_writes_metrics(tmp_path):
+    totals = {
+        "records": {"count": 2},
+        "invoice_vat": {
+            "sum": 14.0,
+            "abs_sum": 20.0,
+            "count": 2,
+            "missing": 0,
+            "zero": 0,
+            "negative": 1,
+            "positive": 1,
+            "min": -3.0,
+            "max": 17.0,
+            "avg": 7.0,
+        },
+        "invoice_total": {
+            "sum": 80.0,
+            "abs_sum": 120.0,
+            "count": 2,
+            "missing": 1,
+            "zero": 1,
+            "negative": 1,
+            "positive": 1,
+            "min": -20.0,
+            "max": 100.0,
+            "avg": 40.0,
+        },
+    }
+    path = tmp_path / "summary.csv"
+    report.write_summary_csv(totals, path)
+    rows = path.read_text(encoding="utf-8").splitlines()
+    header = rows[0].split(",")
+    assert header[:4] == ["metric", "sum", "abs_sum", "count"]
+    assert rows[1].startswith("records,,,")
+    assert rows[2].startswith("invoice_vat,14.00,20.00,2")
+    assert rows[3].startswith("invoice_total,80.00,120.00,2")
+
+
+def test_report_writers_create_parent_dirs(tmp_path):
+    nested = tmp_path / "reports" / "nested"
+    json_path = nested / "out.json"
+    csv_path = nested / "out.csv"
+    summary_path = nested / "summary.csv"
+
+    records = [report.InvoiceRecord(source_file="a.pdf", invoice_total=10.0)]
+    report.write_json(records, json_path)
+    report.write_csv(records, csv_path)
+    report.write_summary_csv(report.compute_report_totals(records), summary_path)
+
+    assert json_path.exists()
+    assert csv_path.exists()
+    assert summary_path.exists()
+
+
 def test_infer_invoice_for_handles_details_marker():
     lines_simple = [
         "header line",
