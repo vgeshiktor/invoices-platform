@@ -50,7 +50,7 @@ def test_cli_handles_files_flag_and_debug(monkeypatch, tmp_path, capsys):
     )
 
     monkeypatch.setattr(
-        report, "parse_invoice", lambda path, debug=False: sample_record
+        report, "parse_invoices", lambda path, debug=False: [sample_record]
     )
 
     argv = [
@@ -163,3 +163,120 @@ def test_stingtv_invoice_fields(monkeypatch):
     assert record.category_rule and record.category_rule.startswith("vendor:")
     assert record.breakdown_values == [99.8, 35.0, 0.0]
     assert record.breakdown_sum == pytest.approx(record.invoice_total, rel=1e-3)
+
+
+class _FakePage:
+    def __init__(self, text, words):
+        self._text = text
+        self._words = words
+
+    def get_text(self, kind="text"):
+        if kind == "text":
+            return self._text
+        if kind == "words":
+            return self._words
+        raise ValueError(f"Unsupported kind: {kind}")
+
+
+class _FakeDoc:
+    def __init__(self, pages):
+        self._pages = pages
+
+    def __iter__(self):
+        return iter(self._pages)
+
+    def close(self):
+        return None
+
+
+class _FakeFitz:
+    def __init__(self, doc):
+        self._doc = doc
+
+    def open(self, _path):
+        return self._doc
+
+
+def _make_municipal_page(invoice_id, invoice_for, total, breakdown_values):
+    lines = [
+        "משולם בהוראת קבע",
+        'סה"כ יגבה מהחשבון בש"ח:',
+        invoice_for,
+        invoice_id,
+        "27/02/2026",
+        f"{abs(breakdown_values[0]):,.2f} חיוב תקופתי ארנונה- 2026 ארנונה",
+        f"{abs(breakdown_values[1]):,.2f} הנחת גביה בבנק- 2026 ארנונה",
+    ]
+    text = "\n".join(lines)
+    y_coord = 100.0
+    words = [
+        (10.0, y_coord, 11.0, y_coord + 1, 'סה"כ', 0, 0, 0),
+        (20.0, y_coord, 21.0, y_coord + 1, "יגבה", 0, 0, 1),
+        (30.0, y_coord, 31.0, y_coord + 1, "מהחשבון", 0, 0, 2),
+        (40.0, y_coord, 41.0, y_coord + 1, 'בש"ח:', 0, 0, 3),
+        (80.0, y_coord, 81.0, y_coord + 1, f"{total:,.2f}", 0, 0, 4),
+    ]
+    return _FakePage(text, words)
+
+
+def test_parse_invoices_splits_municipal_direct_debit(monkeypatch):
+    base_record = report.InvoiceRecord(
+        source_file="sample.pdf",
+        invoice_from="עיריית פתח תקווה",
+        invoice_vat=0.0,
+        municipal=True,
+    )
+    pages = [
+        _make_municipal_page(
+            "10200570020", "גן ילדים/מעון- 39", 5968.8, [6010.9, -42.1]
+        ),
+        _make_municipal_page("10200570021", "קרקע תפוסה- 516", 315.6, [317.8, -2.2]),
+        _make_municipal_page(
+            "10200700015", "חנייה בתעריף קרקע תפוסה- 510", 126.2, [127.1, -0.9]
+        ),
+    ]
+    monkeypatch.setattr(report, "HAVE_PYMUPDF", True)
+    monkeypatch.setattr(report, "fitz", _FakeFitz(_FakeDoc(pages)))
+    monkeypatch.setattr(report, "parse_invoice", lambda path, debug=False: base_record)
+
+    records = report.parse_invoices(Path("sample.pdf"))
+    assert len(records) == 3
+    by_id = {rec.invoice_id: rec for rec in records}
+    assert by_id["10200570020"].invoice_total == pytest.approx(5968.8, rel=1e-3)
+    assert by_id["10200570020"].breakdown_values == [6010.9, -42.1]
+    assert by_id["10200570020"].invoice_for == "גן ילדים/מעון- 39"
+    assert by_id["10200570020"].invoice_vat == pytest.approx(0.0)
+    assert by_id["10200570020"].data_source == "pymupdf"
+
+
+def test_parse_invoices_skips_split_on_duplicate_ids(monkeypatch):
+    base_record = report.InvoiceRecord(
+        source_file="sample.pdf",
+        invoice_from="עיריית פתח תקווה",
+        invoice_total=999.0,
+        municipal=True,
+    )
+    pages = [
+        _make_municipal_page(
+            "10200570020", "גן ילדים/מעון- 39", 5968.8, [6010.9, -42.1]
+        ),
+        _make_municipal_page("10200570020", "גן ילדים/מעון- 39", 315.6, [317.8, -2.2]),
+    ]
+    monkeypatch.setattr(report, "HAVE_PYMUPDF", True)
+    monkeypatch.setattr(report, "fitz", _FakeFitz(_FakeDoc(pages)))
+    monkeypatch.setattr(report, "parse_invoice", lambda path, debug=False: base_record)
+
+    records = report.parse_invoices(Path("sample.pdf"))
+    assert records == [base_record]
+
+
+def test_parse_invoices_skips_when_not_municipal(monkeypatch):
+    base_record = report.InvoiceRecord(
+        source_file="sample.pdf",
+        invoice_total=10.0,
+        municipal=False,
+    )
+    monkeypatch.setattr(report, "parse_invoice", lambda path, debug=False: base_record)
+
+    records = report.parse_invoices(Path("sample.pdf"))
+    assert records == [base_record]

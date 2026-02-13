@@ -43,16 +43,18 @@ START_DATE ?=
 END_DATE ?=
 
 GMAIL_INVOICES_DIR ?= invoices_gmail
-GMAIL_EXTRA_ARGS ?= --save-candidates candidates_gmail.json --save-nonmatches rejected_gmail.json
+GMAIL_EXTRA_ARGS ?= --save-candidates $(GMAIL_INVOICES_DIR)/reports/candidates_gmail.json \
+	--save-nonmatches $(GMAIL_INVOICES_DIR)/reports/rejected_gmail.json
 
 GRAPH_CLIENT_ID ?=
 GRAPH_AUTHORITY ?= consumers
 GRAPH_INVOICES_DIR ?= invoices_outlook
-GRAPH_EXTRA_ARGS ?= --save-json invoices.json \
-	--save-csv invoices.csv \
-    --download-report download_report.json \
+GRAPH_EXTRA_ARGS ?= --save-json $(GRAPH_INVOICES_DIR)/reports/invoices.json \
+	--save-csv $(GRAPH_INVOICES_DIR)/reports/invoices.csv \
+    --download-report $(GRAPH_INVOICES_DIR)/reports/download_report.json \
 	--explain --verify \
-	--save-candidates candidates_outlook.json --save-nonmatches rejected_outlook.json
+	--save-candidates $(GRAPH_INVOICES_DIR)/reports/candidates_outlook.json \
+	--save-nonmatches $(GRAPH_INVOICES_DIR)/reports/vrejected_outlook.json
 
 MONTHLY_BASE_DIR ?= invoices
 MONTHLY_PROVIDERS ?= gmail,outlook
@@ -61,8 +63,8 @@ MONTHLY_GRAPH_ARGS ?= --exclude-sent --verify --explain
 MONTHLY_SEQUENTIAL ?=
 
 REPORT_INPUT_DIR ?= invoices_outlook
-REPORT_JSON_OUTPUT ?= invoice_report.json
-REPORT_CSV_OUTPUT ?= invoice_report.csv
+REPORT_JSON_OUTPUT ?= reports/invoice_report.json
+REPORT_CSV_OUTPUT ?= reports/invoice_report.csv
 REPORT_EXTRA_ARGS ?=
 
 run-gmail: ## הרצת Gmail invoice finder (נדרש START_DATE ו-END_DATE)

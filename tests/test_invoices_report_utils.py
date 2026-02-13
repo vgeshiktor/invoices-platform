@@ -266,9 +266,9 @@ def test_generate_report_and_writers(tmp_path, monkeypatch):
 
     def fake_parse(path, debug=False):
         captured.append(path.name)
-        return report.InvoiceRecord(source_file=path.name, invoice_total=10.0)
+        return [report.InvoiceRecord(source_file=path.name, invoice_total=10.0)]
 
-    monkeypatch.setattr(report, "parse_invoice", fake_parse)
+    monkeypatch.setattr(report, "parse_invoices", fake_parse)
 
     records = report.generate_report(
         invoices_dir, selected_files=["a.pdf", "missing.pdf"], debug=True
@@ -299,3 +299,47 @@ def test_infer_invoice_for_handles_details_marker():
         "1020057002009 ' יתרת חוב שלט מס- 2025 שלטים",
     ]
     assert report.infer_invoice_for(lines_with_amount) == "שלטים 2025"
+
+
+def test_find_municipal_invoice_id_uses_previous_line():
+    lines = [
+        "משולם בהוראת קבע",
+        "גן ילדים/מעון- 39",
+        "10200570020",
+        "שורה אחרת",
+    ]
+    invoice_id, invoice_for = report.find_municipal_invoice_id(lines)
+    assert invoice_id == "10200570020"
+    assert invoice_for == "גן ילדים/מעון- 39"
+
+
+def test_extract_municipal_breakdown_marks_discount_negative():
+    lines = [
+        "6,010.90 חיוב תקופתי ארנונה- 2026 ארנונה",
+        "42.10 הנחת גביה בבנק- 2026 ארנונה",
+    ]
+    values = report.extract_municipal_breakdown(lines)
+    assert values == [6010.9, -42.1]
+
+
+def test_extract_amount_from_label_reads_word_line(monkeypatch):
+    monkeypatch.setattr(report, "HAVE_PYMUPDF", True)
+
+    class DummyPage:
+        def __init__(self, words):
+            self._words = words
+
+        def get_text(self, mode):
+            assert mode == "words"
+            return self._words
+
+    words = [
+        (10.0, 100.0, 11.0, 101.0, 'סה"כ', 0, 0, 0),
+        (20.0, 100.0, 21.0, 101.0, "יגבה", 0, 0, 1),
+        (30.0, 100.0, 31.0, 101.0, "מהחשבון", 0, 0, 2),
+        (40.0, 100.0, 41.0, 101.0, 'בש"ח:', 0, 0, 3),
+        (80.0, 100.0, 81.0, 101.0, "1,234.50", 0, 0, 4),
+    ]
+    page = DummyPage(words)
+    amount = report.extract_amount_from_label(page, ["יגבה"])
+    assert amount == pytest.approx(1234.5)

@@ -7,7 +7,7 @@ import hashlib
 import json
 import logging
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -588,6 +588,153 @@ def extract_text_with_pymupdf(path: Path) -> str:
     finally:
         doc.close()
     return "\n".join(parts)
+
+
+DIRECT_DEBIT_LABELS = (
+    'סה"כ יגבה מהחשבון',
+    'סה"כ יגבה',
+)
+MUNICIPAL_BREAKDOWN_MARKERS = (
+    "חיוב תקופתי",
+    "חיוב שנתי",
+    "הנחת גביה",
+    "הנחת תשלום",
+)
+
+
+def find_municipal_invoice_id(lines: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    def prev_text(idx: int) -> Optional[str]:
+        for pos in range(idx - 1, -1, -1):
+            candidate = lines[pos].strip()
+            if candidate:
+                return candidate
+        return None
+
+    for idx, line in enumerate(lines):
+        token = re.sub(r"\s+", "", line)
+        if not token.isdigit() or not (8 <= len(token) <= 12):
+            continue
+        prev = prev_text(idx)
+        if prev and re.search(r"[א-תA-Za-z]", prev):
+            return token, prev
+    return None, None
+
+
+def extract_amount_from_label(page: "fitz.Page", label_tokens: Sequence[str]) -> Amount:
+    words = page.get_text("words")
+    target = None
+    for word in words:
+        if any(token in word[4] for token in label_tokens):
+            target = (word[5], word[6])
+            break
+    if not target:
+        return None
+    line_words = [word for word in words if word[5] == target[0] and word[6] == target[1]]
+    if not line_words:
+        return None
+    y_coord = sum(word[1] for word in line_words) / len(line_words)
+    digits = [
+        word
+        for word in words
+        if abs(word[1] - y_coord) < 0.6 and re.fullmatch(r"[0-9.,]+", word[4])
+    ]
+    if not digits:
+        return None
+    digits = sorted(digits, key=lambda word: word[0])
+    raw = "".join(word[4] for word in digits)
+    return parse_number(raw)
+
+
+def extract_municipal_breakdown(lines: List[str]) -> Optional[List[float]]:
+    values: List[float] = []
+    for line in lines:
+        if not any(marker in line for marker in MUNICIPAL_BREAKDOWN_MARKERS):
+            continue
+        amount = select_amount(re.findall(r"[\d.,]+", line))
+        if amount is None:
+            continue
+        is_discount = "הנחת" in line or "זיכוי" in line or line.lstrip().startswith("-")
+        if is_discount:
+            amount = -abs(amount)
+        values.append(amount)
+    return values or None
+
+
+def split_municipal_multi_invoice(
+    path: Path, base_record: InvoiceRecord, debug: bool = False
+) -> List[InvoiceRecord]:
+    if not HAVE_PYMUPDF or not base_record.municipal:
+        return [base_record]
+    if base_record.notes == "extract_text_failed":
+        return [base_record]
+    try:
+        doc = fitz.open(path)
+    except Exception:
+        return [base_record]
+    entries: List[Dict[str, object]] = []
+    try:
+        for page in doc:
+            text = page.get_text("text")
+            if not text:
+                continue
+            if not any(label in text for label in DIRECT_DEBIT_LABELS):
+                continue
+            lines = extract_lines(text)
+            invoice_id, invoice_for = find_municipal_invoice_id(lines)
+            if not invoice_id:
+                continue
+            total = extract_amount_from_label(page, ["יגבה"])
+            if total is None:
+                total = extract_amount_from_label(page, ["לתשלום"])
+            breakdown_values = extract_municipal_breakdown(lines)
+            breakdown_sum = round(sum(breakdown_values), 2) if breakdown_values else None
+            if total is None and breakdown_sum is None:
+                continue
+            entries.append(
+                {
+                    "invoice_id": invoice_id,
+                    "invoice_for": invoice_for,
+                    "invoice_date": infer_invoice_date(text),
+                    "invoice_total": total or breakdown_sum,
+                    "breakdown_values": breakdown_values,
+                    "breakdown_sum": breakdown_sum,
+                }
+            )
+    finally:
+        doc.close()
+    if len(entries) < 2:
+        return [base_record]
+    seen: set[str] = set()
+    records: List[InvoiceRecord] = []
+    for entry in entries:
+        invoice_id = entry["invoice_id"]
+        if not isinstance(invoice_id, str) or invoice_id in seen:
+            continue
+        seen.add(invoice_id)
+        record = replace(base_record)
+        record.invoice_id = invoice_id
+        record.invoice_for = entry.get("invoice_for") or base_record.invoice_for
+        record.invoice_date = entry.get("invoice_date") or base_record.invoice_date
+        record.invoice_total = entry.get("invoice_total")
+        record.breakdown_values = entry.get("breakdown_values")
+        record.breakdown_sum = entry.get("breakdown_sum")
+        record.invoice_vat = 0.0
+        record.data_source = "pymupdf"
+        record.parse_confidence = compute_parse_confidence(record)
+        if (
+            record.breakdown_sum is not None
+            and record.invoice_total is not None
+            and abs(record.breakdown_sum - record.invoice_total) > 1.0
+        ):
+            record.notes = (record.notes + "; " if record.notes else "") + (
+                "Total differs from breakdown sum"
+            )
+        records.append(record)
+    if len(records) < 2:
+        return [base_record]
+    if debug:
+        print(f"[debug][{path.name}] municipal split into {len(records)} records")
+    return records
 
 
 def extract_lines(text: str) -> List[str]:
@@ -1629,6 +1776,11 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
     return record
 
 
+def parse_invoices(path: Path, debug: bool = False) -> List[InvoiceRecord]:
+    record = parse_invoice(path, debug=debug)
+    return split_municipal_multi_invoice(path, record, debug=debug)
+
+
 def generate_report(
     input_dir: Path,
     *,
@@ -1655,7 +1807,7 @@ def generate_report(
             if debug:
                 print(f"[debug] Skip missing file: {path}")
             continue
-        records.append(parse_invoice(path, debug=debug))
+        records.extend(parse_invoices(path, debug=debug))
     return records
 
 
