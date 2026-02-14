@@ -601,6 +601,12 @@ MUNICIPAL_BREAKDOWN_MARKERS = (
     "הנחת תשלום",
 )
 
+PARTNER_PERIODIC_MARKERS = (
+    "חשבון תקופתי",
+    "מקור-תקופתי",
+    "חשבון מקור-תקופתי",
+)
+
 
 def find_municipal_invoice_id(lines: List[str]) -> Tuple[Optional[str], Optional[str]]:
     def prev_text(idx: int) -> Optional[str]:
@@ -658,6 +664,80 @@ def extract_municipal_breakdown(lines: List[str]) -> Optional[List[float]]:
             amount = -abs(amount)
         values.append(amount)
     return values or None
+
+
+def normalize_partner_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+def parse_partner_amount_fragment(fragment: str) -> Optional[float]:
+    cleaned = fragment.replace("{", " ").replace("}", " ")
+    cleaned = " ".join(cleaned.split())
+    match = re.search(r"(\d{1,2})\s*\.\s*([\d,]{3,})", cleaned)
+    if match:
+        token = f"{match.group(2)}.{match.group(1)}"
+        amount = parse_number(token)
+        if amount is not None:
+            return amount
+    tokens = re.findall(r"[\d,]+\.\d{2}", cleaned)
+    if tokens:
+        return parse_number(tokens[0])
+    tokens = re.findall(r"[\d,]+", cleaned)
+    if tokens:
+        return parse_number(tokens[0])
+    return None
+
+
+def extract_partner_amount(normalized: str, marker_pattern: str) -> Optional[float]:
+    match = re.search(marker_pattern + r"(.{0,80})", normalized, flags=re.DOTALL)
+    if not match:
+        return None
+    return parse_partner_amount_fragment(match.group(1))
+
+
+def extract_partner_totals_from_text(text: str) -> Dict[str, Optional[float]]:
+    normalized = normalize_partner_text(text)
+    total = extract_partner_amount(
+        normalized,
+        r"סה[\"״']?כ\s+חיובים\s+וזיכויים\s+לתקופת\s+החשבון\s+כולל\s+מע\"?מ",
+    )
+    if total is None:
+        total = extract_partner_amount(normalized, r"סה[\"״']?כ\s+לתשלום")
+    base = extract_partner_amount(
+        normalized,
+        r"סה[\"״']?כ\s+חיובי\s+החשבון\s+לא\s+כולל\s+מע\"?מ",
+    )
+    vat = extract_partner_amount(normalized, r"מע\"?מ%?\s*18")
+    return {
+        "invoice_total": total,
+        "base_before_vat": base,
+        "invoice_vat": vat,
+    }
+
+
+def extract_partner_totals_from_pdf(path: Path) -> Dict[str, Optional[float]]:
+    if not HAVE_PYMUPDF:
+        return {}
+    try:
+        doc = fitz.open(path)
+    except Exception:
+        return {}
+    try:
+        for page in doc:
+            text = page.get_text("text")
+            if not text:
+                continue
+            normalized = normalize_partner_text(text)
+            if not all(marker in normalized for marker in ("חשבון", "תקופתי")):
+                continue
+            if not any(marker in normalized for marker in PARTNER_PERIODIC_MARKERS):
+                continue
+            totals = extract_partner_totals_from_text(text)
+            if totals.get("invoice_total"):
+                return totals
+    finally:
+        doc.close()
+    return {}
 
 
 def split_municipal_multi_invoice(
@@ -1723,6 +1803,18 @@ def parse_invoice(path: Path, debug: bool = False) -> InvoiceRecord:
         label=path.name,
         pdfminer_lines=lines_pdfminer,
     )
+    if any(marker in text for marker in ("פרטנר", "partner", "Partner")):
+        partner_totals = extract_partner_totals_from_pdf(path)
+        if partner_totals:
+            for key, value in partner_totals.items():
+                if value is not None:
+                    totals[key] = value
+            if debug:
+                print(
+                    f"[debug][{path.name}] partner periodic totals override "
+                    f"total={totals.get('invoice_total')} vat={totals.get('invoice_vat')} "
+                    f"base={totals.get('base_before_vat')}"
+                )
     record.invoice_total = totals.get("invoice_total")
     record.invoice_vat = totals.get("invoice_vat")
     record.breakdown_sum = totals.get("breakdown_sum")

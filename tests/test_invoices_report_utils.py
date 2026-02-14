@@ -364,6 +364,19 @@ def test_write_summary_csv_writes_metrics(tmp_path):
     assert rows[3].startswith("invoice_total,80.00,120.00,2")
 
 
+def test_extract_partner_totals_from_text_handles_reversed_amounts():
+    text = (
+        'סה"כ חיובי החשבון לא כולל מע"מ%) 18 ( 42 . 975 { '
+        'מע"מ% 18 58 . 175 { '
+        'סה"כ חיובים וזיכויים לתקופת החשבון כולל מע"מ00 . 1,151 { '
+        '00 . 1,151 {סה"כ לתשלום'
+    )
+    totals = report.extract_partner_totals_from_text(text)
+    assert totals["invoice_total"] == pytest.approx(1151.0)
+    assert totals["invoice_vat"] == pytest.approx(175.58)
+    assert totals["base_before_vat"] == pytest.approx(975.42)
+
+
 def test_report_writers_create_parent_dirs(tmp_path):
     nested = tmp_path / "reports" / "nested"
     json_path = nested / "out.json"

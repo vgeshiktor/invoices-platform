@@ -320,3 +320,32 @@ def test_parse_invoices_skips_when_not_municipal(monkeypatch):
 
     records = report.parse_invoices(Path("sample.pdf"))
     assert records == [base_record]
+
+
+def test_partner_periodic_totals_override(monkeypatch):
+    monkeypatch.setattr(report, "extract_text", lambda path: "פרטנר")
+    monkeypatch.setattr(report, "extract_text_with_pymupdf", lambda path: "פרטנר")
+    monkeypatch.setattr(report, "extract_lines", lambda _text: [])
+    monkeypatch.setattr(
+        report,
+        "infer_totals",
+        lambda *args, **kwargs: {
+            "invoice_total": 10.0,
+            "invoice_vat": 1.0,
+            "base_before_vat": 9.0,
+            "municipal": False,
+        },
+    )
+    monkeypatch.setattr(
+        report,
+        "extract_partner_totals_from_pdf",
+        lambda path: {
+            "invoice_total": 1151.0,
+            "invoice_vat": 175.58,
+            "base_before_vat": 975.42,
+        },
+    )
+    record = report.parse_invoice(Path("partner.pdf"))
+    assert record.invoice_total == pytest.approx(1151.0)
+    assert record.invoice_vat == pytest.approx(175.58)
+    assert record.base_before_vat == pytest.approx(975.42)
