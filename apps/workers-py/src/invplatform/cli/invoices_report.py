@@ -53,7 +53,7 @@ KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("stingtv", "STINGTV"),
     ("סי יתורש", "STINGTV"),
     ("יתורש סי", "STINGTV"),
-    ("just simple ltd", 'JUST SIMPLE LTD - בע"מ'),
+    ("just simple ltd", "JUST SIMPLE LTD"),
 )
 
 PETAH_TIKVA_KEYWORDS: Tuple[str, ...] = ("פתח תק", "הווקת חתפ")
@@ -1013,8 +1013,9 @@ def infer_invoice_date(text: str) -> Optional[str]:
 def detect_known_vendor(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
+    normalized_text = text.casefold()
     for marker, label in KNOWN_VENDOR_MARKERS:
-        if marker in text:
+        if marker.casefold() in normalized_text:
             return label
     return None
 
@@ -1385,6 +1386,46 @@ def extract_stingtv_breakdown(text: Optional[str]) -> List[float]:
     return values
 
 
+def extract_just_simple_invoice_for(
+    lines: List[str], raw_text: Optional[str] = None
+) -> Optional[str]:
+    source = raw_text or " ".join(lines)
+    if not source:
+        return None
+    normalized = " ".join(source.split())
+    if "just simple ltd" not in normalized.casefold():
+        return None
+
+    period_match = re.search(r"\b(?:0?[1-9]|1[0-2])/\d{2}\b", normalized)
+    period = period_match.group(0) if period_match else None
+    has_core_terms = all(term in normalized for term in ("תפעול", "פנסיוני", "שוטף"))
+    if has_core_terms and period:
+        return f"תפעול פנסיוני- שוטף {period}"
+
+    for idx, line in enumerate(lines):
+        if "תאור" not in line and "תיאור" not in line:
+            continue
+        collected: List[str] = []
+        for lookahead in range(1, 8):
+            pos = idx + lookahead
+            if pos >= len(lines):
+                break
+            candidate = lines[pos].strip()
+            if not candidate:
+                continue
+            if any(marker in candidate for marker in ("כמות", 'סה"כ', "סכום", "פירוט", "אופן")):
+                break
+            collected.append(candidate)
+        segment = " ".join(collected)
+        if all(term in segment for term in ("תפעול", "פנסיוני", "שוטף")):
+            if period is None:
+                segment_period = re.search(r"\b(?:0?[1-9]|1[0-2])/\d{2}\b", segment)
+                period = segment_period.group(0) if segment_period else None
+            if period:
+                return f"תפעול פנסיוני- שוטף {period}"
+    return None
+
+
 def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[str]:
     if has_public_transport_marker(text):
         return PUBLIC_TRANSPORT_INVOICE_FOR
@@ -1397,6 +1438,9 @@ def infer_invoice_for(lines: List[str], text: Optional[str] = None) -> Optional[
     stingtv_summary = extract_stingtv_invoice_for(text)
     if stingtv_summary:
         return stingtv_summary
+    just_simple_summary = extract_just_simple_invoice_for(lines, text)
+    if just_simple_summary:
+        return just_simple_summary
     partner_summary = extract_partner_invoice_for(lines, text)
     if partner_summary:
         return partner_summary

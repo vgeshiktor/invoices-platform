@@ -50,6 +50,7 @@ def test_vendor_and_invoice_for_normalization_handles_rtl_variants():
         == "משרד התחבורה והבטיחות בדרכים"
     )
     assert report.detect_known_vendor("מ\"עב ן'ג-קזב") == 'בזק-ג׳ן בע"מ'
+    assert report.detect_known_vendor('JUST SIMPLE LTD  -  מ" בע') == "JUST SIMPLE LTD"
     assert (
         report.normalize_invoice_for_value('JUST SIMPLE LTD  -  מ" בע')
         == 'JUST SIMPLE LTD - בע"מ'
@@ -640,6 +641,30 @@ def test_infer_invoice_for_handles_details_marker():
 def test_extract_ofek_invoice_for_handles_non_theater_variant():
     text = 'מאת לכבוד #פירוט דצמבר חודש חוג 1 כולל מע"מ'
     assert report.extract_ofek_invoice_for(text) == "חוג חודש דצמבר"
+
+
+def test_extract_just_simple_invoice_for_from_description_column():
+    lines = [
+        'JUST SIMPLE LTD  -  מ" בע',
+        "חשבונית",
+        "קבלה",
+        "תאור",
+        "תפעול",
+        "מס",
+        "12/25  שוטף",
+        "פנסיוני",
+        "-",
+        "כמות",
+    ]
+    text = (
+        'JUST SIMPLE LTD  -  מ" בע חשבונית קבלה תאור '
+        "תפעול מס 12/25 שוטף פנסיוני - כמות"
+    )
+    assert (
+        report.extract_just_simple_invoice_for(lines, text)
+        == "תפעול פנסיוני- שוטף 12/25"
+    )
+    assert report.infer_invoice_for(lines, text) == "תפעול פנסיוני- שוטף 12/25"
 
 
 def test_find_municipal_invoice_id_uses_previous_line():
