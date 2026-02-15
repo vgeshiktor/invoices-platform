@@ -1297,10 +1297,20 @@ def extract_ofek_invoice_for(text: Optional[str]) -> Optional[str]:
         return None
     normalized = " ".join(text.split())
     month_pattern = r"(אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר|ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי)"
-    matches = re.findall(r"חוג\s+תיאטרון\s+חודש\s+" + month_pattern, normalized)
-    matches += re.findall(month_pattern + r"\s+חודש\s+תיאטרון\s+חוג", normalized)
-    if matches:
-        return " | ".join(f"חוג תיאטרון חודש {month}" for month in matches)
+    variants = (
+        (r"חוג\s+תיאטרון\s+חודש\s+" + month_pattern, "חוג תיאטרון חודש {}"),
+        (month_pattern + r"\s+חודש\s+תיאטרון\s+חוג", "חוג תיאטרון חודש {}"),
+        (r"חוג\s+חודש\s+" + month_pattern, "חוג חודש {}"),
+        (month_pattern + r"\s+חודש\s+חוג", "חוג חודש {}"),
+    )
+    summaries: List[str] = []
+    for pattern, template in variants:
+        for month in re.findall(pattern, normalized):
+            value = template.format(month)
+            if value not in summaries:
+                summaries.append(value)
+    if summaries:
+        return " | ".join(summaries)
     return None
 
 

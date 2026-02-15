@@ -432,6 +432,11 @@ def test_infer_invoice_for_handles_details_marker():
     assert report.infer_invoice_for(lines_with_amount) == "שלטים 2025"
 
 
+def test_extract_ofek_invoice_for_handles_non_theater_variant():
+    text = 'מאת לכבוד #פירוט דצמבר חודש חוג 1 כולל מע"מ'
+    assert report.extract_ofek_invoice_for(text) == "חוג חודש דצמבר"
+
+
 def test_find_municipal_invoice_id_uses_previous_line():
     lines = [
         "משולם בהוראת קבע",
