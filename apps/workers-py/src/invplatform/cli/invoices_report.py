@@ -2252,7 +2252,97 @@ def _sum_field(records: Sequence[InvoiceRecord], field: str) -> Optional[float]:
     return round(total, 2) if has_value else None
 
 
-def write_pdf_report(records: Sequence[InvoiceRecord], output_path: Path) -> None:
+def _vendor_display_name(record: InvoiceRecord) -> str:
+    name = " ".join((record.invoice_from or "").split()).strip()
+    return name or "Unknown Vendor"
+
+
+def _invoice_date_sort_key(value: Optional[str]) -> str:
+    if not value:
+        return "9999-12-31"
+    try:
+        return datetime.strptime(value, "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return value
+
+
+def _build_pdf_rows_with_vendor_subtotals(
+    records: Sequence[InvoiceRecord],
+    *,
+    include_vendor_subtotals: bool = True,
+    skip_single_vendor_subtotals: bool = False,
+) -> List[Tuple[str, Dict[str, object]]]:
+    sorted_records = sorted(
+        records,
+        key=lambda rec: (
+            _vendor_display_name(rec).casefold(),
+            _invoice_date_sort_key(rec.invoice_date),
+            rec.invoice_id or "",
+            rec.source_file,
+        ),
+    )
+
+    rows: List[Tuple[str, Dict[str, object]]] = []
+    current_vendor: Optional[str] = None
+    vendor_records: List[InvoiceRecord] = []
+
+    def flush_vendor_group() -> None:
+        nonlocal vendor_records
+        if not vendor_records:
+            return
+        vendor_name = _vendor_display_name(vendor_records[0])
+        for rec in vendor_records:
+            rows.append(("detail", asdict(rec)))
+
+        should_add_subtotal = include_vendor_subtotals and (
+            not skip_single_vendor_subtotals or len(vendor_records) > 1
+        )
+        if should_add_subtotal:
+            rows.append(
+                (
+                    "vendor_subtotal",
+                    {
+                        "invoice_from": vendor_name,
+                        "invoice_for": "Vendor Subtotal",
+                        "base_before_vat": _sum_field(vendor_records, "base_before_vat"),
+                        "invoice_vat": _sum_field(vendor_records, "invoice_vat"),
+                        "invoice_total": _sum_field(vendor_records, "invoice_total"),
+                    },
+                )
+            )
+        vendor_records = []
+
+    for record in sorted_records:
+        vendor_name = _vendor_display_name(record)
+        if current_vendor is None:
+            current_vendor = vendor_name
+        if vendor_name != current_vendor:
+            flush_vendor_group()
+            current_vendor = vendor_name
+        vendor_records.append(record)
+    flush_vendor_group()
+
+    rows.append(
+        (
+            "grand_total",
+            {
+                "invoice_for": "Grand Total",
+                "base_before_vat": _sum_field(records, "base_before_vat"),
+                "invoice_vat": _sum_field(records, "invoice_vat"),
+                "invoice_total": _sum_field(records, "invoice_total"),
+            },
+        )
+    )
+    return rows
+
+
+def write_pdf_report(
+    records: Sequence[InvoiceRecord],
+    output_path: Path,
+    *,
+    include_vendor_subtotals: bool = True,
+    skip_single_vendor_subtotals: bool = False,
+) -> None:
     if not HAVE_PYMUPDF:
         raise SystemExit(
             "Missing dependency: pymupdf is required for PDF report generation. "
@@ -2275,6 +2365,7 @@ def write_pdf_report(records: Sequence[InvoiceRecord], output_path: Path) -> Non
     header_text_color = (1.0, 1.0, 1.0)
     zebra_odd = (1.0, 1.0, 1.0)
     zebra_even = (0.95, 0.97, 0.99)
+    vendor_subtotal_fill = (0.90, 0.94, 0.98)
     summary_fill = (0.85, 0.91, 0.97)
     border_color = (0.73, 0.76, 0.80)
     body_text_color = (0.13, 0.13, 0.13)
@@ -2344,25 +2435,27 @@ def write_pdf_report(records: Sequence[InvoiceRecord], output_path: Path) -> Non
             )
             x += cell_w
 
+    rows = _build_pdf_rows_with_vendor_subtotals(
+        records,
+        include_vendor_subtotals=include_vendor_subtotals,
+        skip_single_vendor_subtotals=skip_single_vendor_subtotals,
+    )
+
     current_y = draw_page_header(page)
-    for idx, record in enumerate(records):
+    detail_idx = 0
+    for row_type, row_data in rows:
         if current_y + row_h > table_bottom_limit:
             page = doc.new_page(width=page_width, height=page_height)
             current_y = draw_page_header(page)
-        fill_color = zebra_odd if idx % 2 == 0 else zebra_even
-        draw_row(page, current_y, asdict(record), fill_color=fill_color)
+        if row_type == "detail":
+            fill_color = zebra_odd if detail_idx % 2 == 0 else zebra_even
+            draw_row(page, current_y, row_data, fill_color=fill_color)
+            detail_idx += 1
+        elif row_type == "vendor_subtotal":
+            draw_row(page, current_y, row_data, fill_color=vendor_subtotal_fill, is_summary=True)
+        else:
+            draw_row(page, current_y, row_data, fill_color=summary_fill, is_summary=True)
         current_y += row_h
-
-    summary_row: Dict[str, object] = {
-        "invoice_for": "Grand Total",
-        "base_before_vat": _sum_field(records, "base_before_vat"),
-        "invoice_vat": _sum_field(records, "invoice_vat"),
-        "invoice_total": _sum_field(records, "invoice_total"),
-    }
-    if current_y + row_h > table_bottom_limit:
-        page = doc.new_page(width=page_width, height=page_height)
-        current_y = draw_page_header(page)
-    draw_row(page, current_y, summary_row, fill_color=summary_fill, is_summary=True)
 
     doc.save(output_path)
     doc.close()
@@ -2473,6 +2566,25 @@ def parse_args() -> argparse.Namespace:
         help="Path for PDF report (default: <csv-output>.pdf)",
     )
     parser.add_argument(
+        "--pdf-vendor-subtotals",
+        dest="pdf_vendor_subtotals",
+        action="store_true",
+        default=True,
+        help="Include per-vendor subtotal rows in the PDF report (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-pdf-vendor-subtotals",
+        dest="pdf_vendor_subtotals",
+        action="store_false",
+        help="Disable per-vendor subtotal rows in the PDF report.",
+    )
+    parser.add_argument(
+        "--pdf-skip-single-vendor-subtotals",
+        action="store_true",
+        default=False,
+        help="When vendor subtotals are enabled, skip subtotal rows for vendors with one invoice.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print detailed parsing diagnostics per invoice.",
@@ -2509,7 +2621,12 @@ def main() -> None:
     print(f"Summary totals → {summary_path}")
     if HAVE_PYMUPDF:
         pdf_path = Path(args.pdf_output) if args.pdf_output else csv_path.with_suffix(".pdf")
-        write_pdf_report(records, pdf_path)
+        write_pdf_report(
+            records,
+            pdf_path,
+            include_vendor_subtotals=args.pdf_vendor_subtotals,
+            skip_single_vendor_subtotals=args.pdf_skip_single_vendor_subtotals,
+        )
         print(f"PDF report → {pdf_path}")
     else:
         print("PDF report skipped (pymupdf is not installed)")

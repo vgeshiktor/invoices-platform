@@ -120,6 +120,58 @@ def test_cli_writes_vat_fields_in_order(monkeypatch, tmp_path):
     assert summary_out.exists()
 
 
+def test_cli_forwards_pdf_subtotal_flags(monkeypatch, tmp_path):
+    json_out = tmp_path / "report.json"
+    csv_out = tmp_path / "report.csv"
+    pdf_out = tmp_path / "report.pdf"
+    dummy_pdf = tmp_path / "sample.pdf"
+    dummy_pdf.write_text("stub")
+
+    sample_record = report.InvoiceRecord(
+        source_file=dummy_pdf.name,
+        base_before_vat=100.0,
+        invoice_vat=17.0,
+        invoice_total=117.0,
+    )
+    monkeypatch.setattr(
+        report, "parse_invoices", lambda path, debug=False: [sample_record]
+    )
+    monkeypatch.setattr(report, "HAVE_PYMUPDF", True)
+
+    captured: dict = {}
+
+    def fake_write_pdf(records, output_path, **kwargs):
+        captured["records"] = records
+        captured["output_path"] = output_path
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(report, "write_pdf_report", fake_write_pdf)
+
+    argv = [
+        "invoices_report",
+        "--input-dir",
+        str(tmp_path),
+        "--files",
+        dummy_pdf.name,
+        "--json-output",
+        str(json_out),
+        "--csv-output",
+        str(csv_out),
+        "--pdf-output",
+        str(pdf_out),
+        "--no-pdf-vendor-subtotals",
+        "--pdf-skip-single-vendor-subtotals",
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    report.main()
+    assert captured["output_path"] == pdf_out
+    assert captured["kwargs"] == {
+        "include_vendor_subtotals": False,
+        "skip_single_vendor_subtotals": True,
+    }
+
+
 def test_arnona_invoice_extracts_period_and_details(monkeypatch):
     record = _parse_fixture_invoice(monkeypatch, "arnona_8UhU.txt")
     assert record.invoice_from == "עיריית פתח תקווה"

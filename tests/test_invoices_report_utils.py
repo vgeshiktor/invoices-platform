@@ -416,6 +416,89 @@ def test_extract_partner_totals_from_text_handles_reversed_amounts():
     assert totals["base_before_vat"] == pytest.approx(975.42)
 
 
+def _pdf_vendor_rows_sample_records():
+    return [
+        report.InvoiceRecord(
+            source_file="c.pdf",
+            invoice_id="2001",
+            invoice_date="03/01/2026",
+            invoice_from="Vendor B",
+            invoice_for="Service C",
+            base_before_vat=70.0,
+            invoice_vat=12.6,
+            invoice_total=82.6,
+        ),
+        report.InvoiceRecord(
+            source_file="b.pdf",
+            invoice_id="1002",
+            invoice_date="02/01/2026",
+            invoice_from="Vendor A",
+            invoice_for="Service B",
+            base_before_vat=20.0,
+            invoice_vat=3.6,
+            invoice_total=23.6,
+        ),
+        report.InvoiceRecord(
+            source_file="a.pdf",
+            invoice_id="1001",
+            invoice_date="01/01/2026",
+            invoice_from="Vendor A",
+            invoice_for="Service A",
+            base_before_vat=10.0,
+            invoice_vat=1.8,
+            invoice_total=11.8,
+        ),
+    ]
+
+
+def test_build_pdf_rows_with_vendor_subtotals_default_behavior():
+    rows = report._build_pdf_rows_with_vendor_subtotals(
+        _pdf_vendor_rows_sample_records()
+    )
+    row_types = [row_type for row_type, _ in rows]
+    assert row_types == [
+        "detail",
+        "detail",
+        "vendor_subtotal",
+        "detail",
+        "vendor_subtotal",
+        "grand_total",
+    ]
+    assert rows[0][1]["invoice_from"] == "Vendor A"
+    assert rows[0][1]["invoice_id"] == "1001"
+    assert rows[1][1]["invoice_id"] == "1002"
+    assert rows[2][1]["invoice_for"] == "Vendor Subtotal"
+    assert rows[2][1]["invoice_total"] == pytest.approx(35.4)
+    assert rows[3][1]["invoice_from"] == "Vendor B"
+    assert rows[4][1]["invoice_total"] == pytest.approx(82.6)
+    assert rows[-1][1]["invoice_for"] == "Grand Total"
+    assert rows[-1][1]["invoice_total"] == pytest.approx(118.0)
+
+
+def test_build_pdf_rows_without_vendor_subtotals():
+    rows = report._build_pdf_rows_with_vendor_subtotals(
+        _pdf_vendor_rows_sample_records(),
+        include_vendor_subtotals=False,
+    )
+    row_types = [row_type for row_type, _ in rows]
+    assert row_types == ["detail", "detail", "detail", "grand_total"]
+
+
+def test_build_pdf_rows_skip_single_vendor_subtotals():
+    rows = report._build_pdf_rows_with_vendor_subtotals(
+        _pdf_vendor_rows_sample_records(),
+        include_vendor_subtotals=True,
+        skip_single_vendor_subtotals=True,
+    )
+    row_types = [row_type for row_type, _ in rows]
+    assert row_types == ["detail", "detail", "vendor_subtotal", "detail", "grand_total"]
+    vendor_subtotals = [
+        payload for row_type, payload in rows if row_type == "vendor_subtotal"
+    ]
+    assert len(vendor_subtotals) == 1
+    assert vendor_subtotals[0]["invoice_from"] == "Vendor A"
+
+
 def test_report_writers_create_parent_dirs(tmp_path):
     nested = tmp_path / "reports" / "nested"
     json_path = nested / "out.json"
@@ -455,6 +538,16 @@ def test_write_pdf_report_contains_headers_and_totals(tmp_path):
     pdf_path = tmp_path / "invoice-report.pdf"
     records = [
         report.InvoiceRecord(
+            source_file="z.pdf",
+            invoice_id="1003",
+            invoice_date="17/01/2026",
+            invoice_from='חברת פרטנר תקשורת בע"מ',
+            invoice_for="רב-קו - טעינה",
+            base_before_vat=50.0,
+            invoice_vat=9.0,
+            invoice_total=59.0,
+        ),
+        report.InvoiceRecord(
             source_file="a.pdf",
             invoice_id="1001",
             invoice_date="15/01/2026",
@@ -468,11 +561,11 @@ def test_write_pdf_report_contains_headers_and_totals(tmp_path):
             source_file="b.pdf",
             invoice_id="1002",
             invoice_date="16/01/2026",
-            invoice_from='חברת פרטנר תקשורת בע"מ',
-            invoice_for="רב-קו - טעינה",
-            base_before_vat=50.0,
-            invoice_vat=9.0,
-            invoice_total=59.0,
+            invoice_from="Vendor A",
+            invoice_for="Service B",
+            base_before_vat=20.0,
+            invoice_vat=3.0,
+            invoice_total=23.0,
         ),
     ]
     report.write_pdf_report(records, pdf_path)
@@ -483,12 +576,49 @@ def test_write_pdf_report_contains_headers_and_totals(tmp_path):
     assert "Invoice Summary Report" in text
     assert "Invoice No." in text
     assert "Subtotal (Before VAT)" in text
+    assert text.count("Vendor Subtotal") == 2
     assert "Grand Total" in text
-    assert "150.00" in text
-    assert "27.00" in text
-    assert "177.00" in text
+    assert "120.00" in text
+    assert "21.00" in text
+    assert "141.00" in text
+    assert "170.00" in text
+    assert "30.00" in text
+    assert "200.00" in text
     assert 'חברת פרטנר תקשורת בע"מ' in text
     assert "רב-קו - טעינה" in text
+    assert text.index("Vendor A") < text.index('חברת פרטנר תקשורת בע"מ')
+
+
+def test_write_pdf_report_can_disable_vendor_subtotals(tmp_path):
+    if not report.HAVE_PYMUPDF:
+        pytest.skip("PyMuPDF not installed")
+
+    pdf_path = tmp_path / "invoice-report-no-subtotals.pdf"
+    report.write_pdf_report(
+        _pdf_vendor_rows_sample_records(),
+        pdf_path,
+        include_vendor_subtotals=False,
+    )
+    with report.fitz.open(pdf_path) as doc:
+        text = "\n".join(page.get_text() for page in doc)
+    assert "Vendor Subtotal" not in text
+    assert "Grand Total" in text
+
+
+def test_write_pdf_report_skips_single_vendor_subtotals(tmp_path):
+    if not report.HAVE_PYMUPDF:
+        pytest.skip("PyMuPDF not installed")
+
+    pdf_path = tmp_path / "invoice-report-skip-single.pdf"
+    report.write_pdf_report(
+        _pdf_vendor_rows_sample_records(),
+        pdf_path,
+        include_vendor_subtotals=True,
+        skip_single_vendor_subtotals=True,
+    )
+    with report.fitz.open(pdf_path) as doc:
+        text = "\n".join(page.get_text() for page in doc)
+    assert text.count("Vendor Subtotal") == 1
 
 
 def test_infer_invoice_for_handles_details_marker():
