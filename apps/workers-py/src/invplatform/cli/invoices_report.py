@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import calendar
+from collections import Counter
 import csv
 import hashlib
 import json
@@ -1083,6 +1084,130 @@ def numeric_values_near_marker(lines: List[str], marker: str, window: int = 4) -
     return values
 
 
+def normalize_marker_text(line: str) -> str:
+    return line.replace("״", '"').replace("׳", "'").replace(" ", "")
+
+
+def is_total_with_vat_line(line: str) -> bool:
+    compact = normalize_marker_text(line)
+    has_total = 'כ"סה' in compact or 'סה"כ' in compact
+    has_vat = 'מ"מע' in compact or 'מע"מ' in compact
+    return has_total and has_vat and "כולל" in compact
+
+
+def is_vat_percent_line(line: str) -> bool:
+    compact = normalize_marker_text(line)
+    has_vat = 'מ"מע' in compact or 'מע"מ' in compact
+    return has_vat and "%" in compact
+
+
+def amount_from_line_end(line: str) -> Amount:
+    tokens = [tok for tok, is_percent in numeric_candidates(line) if not is_percent]
+    if not tokens:
+        return None
+    for token in reversed(tokens):
+        if "." in token or "," in token:
+            amount = parse_number(token)
+            if amount is not None:
+                return amount
+    return parse_number(tokens[-1])
+
+
+def repeated_currency_total(currency_tokens: List[str]) -> Amount:
+    amounts = []
+    for token in currency_tokens:
+        amount = parse_number(token)
+        if amount is None or amount <= 0:
+            continue
+        amounts.append(round(amount, 2))
+    if not amounts:
+        return None
+    counts = Counter(amounts)
+    repeated = [(count, value) for value, count in counts.items() if count >= 2 and value >= 50]
+    if repeated:
+        repeated.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return repeated[0][1]
+    large = [value for value in amounts if value >= 50]
+    if large:
+        return max(large)
+    return max(amounts)
+
+
+def extract_total_from_total_with_vat_lines(lines: List[str], currency_tokens: List[str]) -> Amount:
+    for line in lines:
+        if is_total_with_vat_line(line):
+            amount = amount_from_line_end(line)
+            if amount is not None:
+                return amount
+    for idx in range(len(lines)):
+        window = lines[idx : idx + 4]
+        if not window:
+            continue
+        has_total = any(
+            'כ"סה' in normalize_marker_text(line) or 'סה"כ' in normalize_marker_text(line)
+            for line in window
+        )
+        has_vat = any(
+            'מ"מע' in normalize_marker_text(line) or 'מע"מ' in normalize_marker_text(line)
+            for line in window
+        )
+        has_including = any("כולל" in line for line in window)
+        if has_total and has_vat and has_including:
+            window_amounts = [amount_from_line_end(line) for line in window]
+            numeric_amounts = [
+                value for value in window_amounts if value is not None and value >= 20
+            ]
+            if numeric_amounts:
+                return max(numeric_amounts)
+            return repeated_currency_total(currency_tokens)
+    return None
+
+
+def extract_vat_from_percent_lines(
+    lines: List[str],
+    currency_tokens: List[str],
+    *,
+    total: Amount,
+    explicit_vat_rate: Optional[float],
+) -> Amount:
+    target_rate = explicit_vat_rate
+    for idx, line in enumerate(lines):
+        if not is_vat_percent_line(line):
+            continue
+        amount = amount_from_line_end(line)
+        if amount is not None:
+            return amount
+        if idx + 1 < len(lines):
+            next_amount = amount_from_line_end(lines[idx + 1])
+            if next_amount is not None:
+                return next_amount
+        if target_rate is None:
+            for token, is_percent in numeric_candidates(line):
+                if not is_percent:
+                    continue
+                parsed_rate = parse_number(token)
+                if parsed_rate is not None and 0 < parsed_rate <= 100:
+                    target_rate = parsed_rate
+                    break
+    if total is None or target_rate is None:
+        return None
+    candidates: List[Tuple[float, float]] = []
+    for token in currency_tokens:
+        amount = parse_number(token)
+        if amount is None or amount <= 0 or amount >= total:
+            continue
+        rate = vat_rate_estimate(total, amount)
+        if rate is None:
+            continue
+        candidates.append((abs(rate - target_rate), amount))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    if candidates[0][0] > 1.0:
+        return None
+    return candidates[0][1]
+
+
 def sum_numeric_block(
     lines: List[str],
     start_markers: Iterable[str],
@@ -1358,9 +1483,10 @@ def vat_rate_estimate(total: Optional[float], vat: Optional[float]) -> Optional[
 def extract_vat_rate_from_text(text: Optional[str]) -> Optional[float]:
     if not text:
         return None
+    vat_marker = r"מ\s*[\"״']?\s*ע\s*[\"״']?\s*מ"
     patterns = [
-        r"([\d.,]+)\s*%[^\n]{0,15}?מ\"?עמ",
-        r"מ\"?עמ[^%\d]{0,15}?([\d.,]+)\s*%",
+        rf"([\d.,]+)\s*%[^\n]{{0,15}}?{vat_marker}",
+        rf"{vat_marker}[^%\d]{{0,15}}?([\d.,]+)\s*%",
         r"VAT[^%\d]{0,15}?([\d.,]+)\s*%",
     ]
     for pattern in patterns:
@@ -1443,6 +1569,7 @@ def infer_totals(
         vat = find_amount_before_marker(lines, 'מ"עמ ')
     vat_candidates = numeric_values_near_marker(lines, 'לע מ"עמ')
     explicit_vat_rate = extract_vat_rate_from_text(text)
+    currency_tokens = re.findall(r"₪\s*([\d.,]+)", text)
     dbg(
         f"initial total={total}, base_before_vat={base_before_vat}, "
         f"base_candidates={base_candidates}, vat_initial={vat}, "
@@ -1519,7 +1646,6 @@ def infer_totals(
         numeric = [val for val in amounts if val is not None]
         if numeric:
             total = max(numeric)
-    currency_tokens = re.findall(r"₪\s*([\d.,]+)", text)
     fallback_total = select_amount(currency_tokens[::-1])
     if total is None:
         total = fallback_total
@@ -1527,6 +1653,17 @@ def infer_totals(
         total = fallback_total
     elif total is not None and total <= 5 and fallback_total and fallback_total > total:
         total = fallback_total
+    marker_total = extract_total_from_total_with_vat_lines(lines, currency_tokens)
+    if marker_total is not None and (total is None or abs(marker_total - total) > 1.0):
+        total = marker_total
+    marker_vat = extract_vat_from_percent_lines(
+        lines,
+        currency_tokens,
+        total=total,
+        explicit_vat_rate=explicit_vat_rate,
+    )
+    if marker_vat is not None and (vat is None or abs(marker_vat - vat) > 1.0):
+        vat = marker_vat
     if base_candidates:
         candidates = base_candidates[:]
         if total is not None:

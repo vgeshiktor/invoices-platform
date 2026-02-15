@@ -167,6 +167,29 @@ def test_infer_totals_uses_fallback_patterns():
     assert totals["invoice_vat"] == pytest.approx(90.0)
 
 
+def test_infer_totals_uses_total_with_vat_and_vat_percent_markers():
+    lines = [
+        'כ" סה',
+        "₪ 627.12",
+        "₪ 627.12",
+        "₪ 112.88",
+        "₪ 740.00",
+        "₪ 740.00",
+        "₪ 740.00",
+        "₪ 156.78",
+        'מ" מע  18%',
+        'מ" מע',
+        "כולל",
+        'כ" סה',
+    ]
+    text = "\n".join(lines)
+    totals = report.infer_totals(lines, text)
+    assert totals["invoice_total"] == pytest.approx(740.0)
+    assert totals["invoice_vat"] == pytest.approx(112.88)
+    assert totals["base_before_vat"] == pytest.approx(627.12)
+    assert totals["vat_rate"] == pytest.approx(18.0)
+
+
 def test_infer_totals_municipal_block_enforces_zero_vat():
     block_lines = ['ח"שב', "100", "200", 'סה"', "closing"]
     text = "דרישת תשלום ארנונה"
