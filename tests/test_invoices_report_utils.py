@@ -40,6 +40,22 @@ def test_normalize_parse_and_select_amounts():
     assert report.select_amount(tokens) == pytest.approx(12.30)
 
 
+def test_vendor_and_invoice_for_normalization_handles_rtl_variants():
+    assert (
+        report.detect_known_vendor('מ"עב תירוביצ הרובחתל הרבח ןד')
+        == 'דן חברה לתחבורה ציבורית בע"מ'
+    )
+    assert (
+        report.detect_known_vendor("םיכרדב תוחיטבהו הרובחתה דרשמ")
+        == "משרד התחבורה והבטיחות בדרכים"
+    )
+    assert report.detect_known_vendor("מ\"עב ן'ג-קזב") == 'בזק-ג׳ן בע"מ'
+    assert (
+        report.normalize_invoice_for_value('JUST SIMPLE LTD  -  מ" בע')
+        == 'JUST SIMPLE LTD - בע"מ'
+    )
+
+
 def test_amount_near_markers_and_find_amount_before_marker():
     text = 'טרם 10.00\nסה"כ לתשלום\nעוד שורת 20,25 ו 90'
     assert report.amount_near_markers(
@@ -405,15 +421,74 @@ def test_report_writers_create_parent_dirs(tmp_path):
     json_path = nested / "out.json"
     csv_path = nested / "out.csv"
     summary_path = nested / "summary.csv"
+    pdf_path = nested / "out.pdf"
 
-    records = [report.InvoiceRecord(source_file="a.pdf", invoice_total=10.0)]
+    records = [
+        report.InvoiceRecord(
+            source_file="a.pdf",
+            invoice_id="1001",
+            invoice_date="15/01/2026",
+            invoice_from="Vendor A",
+            invoice_for="Service A",
+            base_before_vat=100.0,
+            invoice_vat=18.0,
+            invoice_total=118.0,
+        )
+    ]
     report.write_json(records, json_path)
     report.write_csv(records, csv_path)
     report.write_summary_csv(report.compute_report_totals(records), summary_path)
+    if report.HAVE_PYMUPDF:
+        report.write_pdf_report(records, pdf_path)
 
     assert json_path.exists()
     assert csv_path.exists()
     assert summary_path.exists()
+    if report.HAVE_PYMUPDF:
+        assert pdf_path.exists()
+
+
+def test_write_pdf_report_contains_headers_and_totals(tmp_path):
+    if not report.HAVE_PYMUPDF:
+        pytest.skip("PyMuPDF not installed")
+
+    pdf_path = tmp_path / "invoice-report.pdf"
+    records = [
+        report.InvoiceRecord(
+            source_file="a.pdf",
+            invoice_id="1001",
+            invoice_date="15/01/2026",
+            invoice_from="Vendor A",
+            invoice_for="Service A",
+            base_before_vat=100.0,
+            invoice_vat=18.0,
+            invoice_total=118.0,
+        ),
+        report.InvoiceRecord(
+            source_file="b.pdf",
+            invoice_id="1002",
+            invoice_date="16/01/2026",
+            invoice_from='חברת פרטנר תקשורת בע"מ',
+            invoice_for="רב-קו - טעינה",
+            base_before_vat=50.0,
+            invoice_vat=9.0,
+            invoice_total=59.0,
+        ),
+    ]
+    report.write_pdf_report(records, pdf_path)
+
+    with report.fitz.open(pdf_path) as doc:
+        text = "\n".join(page.get_text() for page in doc)
+
+    assert "Invoice Summary Report" in text
+    assert "Invoice No." in text
+    assert "Subtotal (Before VAT)" in text
+    assert "Grand Total" in text
+    assert "150.00" in text
+    assert "27.00" in text
+    assert "177.00" in text
+    assert 'חברת פרטנר תקשורת בע"מ' in text
+    assert "רב-קו - טעינה" in text
 
 
 def test_infer_invoice_for_handles_details_marker():

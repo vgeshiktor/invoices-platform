@@ -5,8 +5,10 @@ import calendar
 from collections import Counter
 import csv
 import hashlib
+import html
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass, asdict, replace
 from datetime import date, datetime, timedelta
@@ -36,6 +38,13 @@ KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("פרטנר", 'חברת פרטנר תקשורת בע"מ'),
     ("רנטרפ", 'חברת פרטנר תקשורת בע"מ'),
     ("partner communications", 'חברת פרטנר תקשורת בע"מ'),
+    ("בזק-ג'ן בע\"מ", "בזק-ג'ן בע\"מ"),
+    ('בזק-ג׳ן בע"מ', 'בזק-ג׳ן בע"מ'),
+    ("מ\"עב ן'ג-קזב", 'בזק-ג׳ן בע"מ'),
+    ('דן חברה לתחבורה ציבורית בע"מ', 'דן חברה לתחבורה ציבורית בע"מ'),
+    ('מ"עב תירוביצ הרובחתל הרבח ןד', 'דן חברה לתחבורה ציבורית בע"מ'),
+    ("משרד התחבורה והבטיחות בדרכים", "משרד התחבורה והבטיחות בדרכים"),
+    ("םיכרדב תוחיטבהו הרובחתה דרשמ", "משרד התחבורה והבטיחות בדרכים"),
     ("אופק הפקות", "אופק הפקות"),
     ("הפקות אופק", "אופק הפקות"),
     ("אופק", "אופק הפקות"),
@@ -44,6 +53,7 @@ KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("stingtv", "STINGTV"),
     ("סי יתורש", "STINGTV"),
     ("יתורש סי", "STINGTV"),
+    ("just simple ltd", 'JUST SIMPLE LTD - בע"מ'),
 )
 
 PETAH_TIKVA_KEYWORDS: Tuple[str, ...] = ("פתח תק", "הווקת חתפ")
@@ -78,6 +88,16 @@ PUBLIC_TRANSPORT_LATIN_MARKERS: Tuple[str, ...] = (
     "rav kav",
 )
 PUBLIC_TRANSPORT_INVOICE_FOR = "רב-קו - טעינה"
+
+PDF_REPORT_COLUMNS: Tuple[Tuple[str, str, float, int], ...] = (
+    ("invoice_id", "Invoice No.", 0.10, 1),
+    ("invoice_date", "Invoice Date", 0.12, 1),
+    ("invoice_from", "Vendor", 0.19, 2),
+    ("invoice_for", "Description", 0.23, 2),
+    ("base_before_vat", "Subtotal (Before VAT)", 0.14, 2),
+    ("invoice_vat", "VAT Amount", 0.11, 2),
+    ("invoice_total", "Total Amount", 0.11, 2),
+)
 
 
 @dataclass
@@ -408,6 +428,8 @@ CATEGORY_RULES: List[Tuple[str, float, List[str], List[str]]] = [
         "transportation",
         0.95,
         [
+            'דן חברה לתחבורה ציבורית בע"מ',
+            "משרד התחבורה והבטיחות בדרכים",
             "תירוביצ הרובחת",
             "תירוביצה הרובחת",
             "התחבורה הציבורית",
@@ -888,6 +910,10 @@ def normalize_invoice_for_value(raw: Optional[str]) -> Optional[str]:
         return "ארנונה לעסקים"
     if "ארנונה" in cleaned:
         return "ארנונה"
+    cleaned = re.sub(r"\s*-\s*", " - ", cleaned)
+    cleaned = re.sub(r'מ["״]\s*בע', 'בע"מ', cleaned)
+    cleaned = re.sub(r'בע["״]\s*מ', 'בע"מ', cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
     return cleaned or None
 
 
@@ -2154,6 +2180,194 @@ def write_summary_csv(
             )
 
 
+def _resolve_pdf_font_file() -> Optional[str]:
+    candidates = [
+        os.environ.get("INVOICE_REPORT_FONT"),
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Hebrew.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.exists():
+            return str(path)
+    return None
+
+
+def _format_pdf_value(field: str, value: object) -> str:
+    if value is None:
+        return ""
+    if field in {"base_before_vat", "invoice_vat", "invoice_total"}:
+        try:
+            return f"{float(value):,.2f}"
+        except (TypeError, ValueError):
+            return ""
+    compact = " ".join(str(value).split())
+    if len(compact) > 120:
+        return compact[:117] + "..."
+    return compact
+
+
+def _pdf_color_to_css(color: Tuple[float, float, float]) -> str:
+    red = max(0, min(255, round(color[0] * 255)))
+    green = max(0, min(255, round(color[1] * 255)))
+    blue = max(0, min(255, round(color[2] * 255)))
+    return f"rgb({red}, {green}, {blue})"
+
+
+def _render_pdf_cell_text(
+    page: "fitz.Page",
+    rect: "fitz.Rect",
+    text: str,
+    *,
+    align: int,
+    font_name: str,
+    fontsize: float,
+    color: Tuple[float, float, float],
+) -> None:
+    align_map = {0: "left", 1: "center", 2: "right"}
+    text_align = align_map.get(align, "left")
+    css = (
+        f"* {{ font-family: {font_name}; font-size: {fontsize}pt; color: {_pdf_color_to_css(color)}; }}"
+        f" div {{ unicode-bidi: plaintext; text-align: {text_align};"
+        " white-space: nowrap; }"
+    )
+    escaped_text = html.escape(text)
+    page.insert_htmlbox(rect, f'<div dir="auto">{escaped_text}</div>', css=css)
+
+
+def _sum_field(records: Sequence[InvoiceRecord], field: str) -> Optional[float]:
+    total = 0.0
+    has_value = False
+    for record in records:
+        value = getattr(record, field, None)
+        if value is None:
+            continue
+        total += value
+        has_value = True
+    return round(total, 2) if has_value else None
+
+
+def write_pdf_report(records: Sequence[InvoiceRecord], output_path: Path) -> None:
+    if not HAVE_PYMUPDF:
+        raise SystemExit(
+            "Missing dependency: pymupdf is required for PDF report generation. "
+            "Install it with `pip install pymupdf`."
+        )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open()
+    font_file = _resolve_pdf_font_file()
+    page_width = 842.0
+    page_height = 595.0
+    margin = 24.0
+    header_h = 24.0
+    row_h = 22.0
+    table_width = page_width - (margin * 2)
+    table_bottom_limit = page_height - margin
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    header_fill = (0.12, 0.28, 0.45)
+    header_text_color = (1.0, 1.0, 1.0)
+    zebra_odd = (1.0, 1.0, 1.0)
+    zebra_even = (0.95, 0.97, 0.99)
+    summary_fill = (0.85, 0.91, 0.97)
+    border_color = (0.73, 0.76, 0.80)
+    body_text_color = (0.13, 0.13, 0.13)
+
+    page = doc.new_page(width=page_width, height=page_height)
+    body_font_name = "helv"
+    if font_file:
+        body_font_name = "invoice_body"
+        page.insert_font(fontname=body_font_name, fontfile=font_file)
+
+    def draw_page_header(active_page: fitz.Page) -> float:
+        if font_file:
+            active_page.insert_font(fontname=body_font_name, fontfile=font_file)
+        active_page.insert_text(
+            fitz.Point(margin, margin),
+            "Invoice Summary Report",
+            fontsize=14,
+            fontname="helv",
+            color=(0.09, 0.19, 0.30),
+        )
+        active_page.insert_text(
+            fitz.Point(margin, margin + 14),
+            f"Generated: {timestamp}",
+            fontsize=8,
+            fontname="helv",
+            color=(0.40, 0.44, 0.50),
+        )
+        y = margin + 22
+        x = margin
+        for _field, header_label, width_ratio, _align in PDF_REPORT_COLUMNS:
+            cell_w = table_width * width_ratio
+            rect = fitz.Rect(x, y, x + cell_w, y + header_h)
+            active_page.draw_rect(rect, color=border_color, fill=header_fill, width=0.6)
+            active_page.insert_textbox(
+                fitz.Rect(rect.x0 + 4, rect.y0 + 4, rect.x1 - 4, rect.y1 - 3),
+                header_label,
+                fontsize=8.2,
+                fontname="helv",
+                color=header_text_color,
+                align=1,
+            )
+            x += cell_w
+        return y + header_h
+
+    def draw_row(
+        active_page: fitz.Page,
+        y: float,
+        row_data: Dict[str, object],
+        *,
+        fill_color: Tuple[float, float, float],
+        is_summary: bool = False,
+    ) -> None:
+        x = margin
+        for field, _header, width_ratio, align in PDF_REPORT_COLUMNS:
+            cell_w = table_width * width_ratio
+            rect = fitz.Rect(x, y, x + cell_w, y + row_h)
+            active_page.draw_rect(rect, color=border_color, fill=fill_color, width=0.5)
+            text = _format_pdf_value(field, row_data.get(field))
+            _render_pdf_cell_text(
+                active_page,
+                fitz.Rect(rect.x0 + 4, rect.y0 + 4, rect.x1 - 4, rect.y1 - 3),
+                text,
+                align=align,
+                font_name=body_font_name,
+                fontsize=8.2 if is_summary else 8.0,
+                color=body_text_color,
+            )
+            x += cell_w
+
+    current_y = draw_page_header(page)
+    for idx, record in enumerate(records):
+        if current_y + row_h > table_bottom_limit:
+            page = doc.new_page(width=page_width, height=page_height)
+            current_y = draw_page_header(page)
+        fill_color = zebra_odd if idx % 2 == 0 else zebra_even
+        draw_row(page, current_y, asdict(record), fill_color=fill_color)
+        current_y += row_h
+
+    summary_row: Dict[str, object] = {
+        "invoice_for": "Grand Total",
+        "base_before_vat": _sum_field(records, "base_before_vat"),
+        "invoice_vat": _sum_field(records, "invoice_vat"),
+        "invoice_total": _sum_field(records, "invoice_total"),
+    }
+    if current_y + row_h > table_bottom_limit:
+        page = doc.new_page(width=page_width, height=page_height)
+        current_y = draw_page_header(page)
+    draw_row(page, current_y, summary_row, fill_color=summary_fill, is_summary=True)
+
+    doc.save(output_path)
+    doc.close()
+
+
 def compute_report_totals(
     records: Sequence[InvoiceRecord],
 ) -> Dict[str, Dict[str, Optional[float] | int]]:
@@ -2254,6 +2468,11 @@ def parse_args() -> argparse.Namespace:
         help="Path for summary CSV totals (default: <csv-output>.summary.csv)",
     )
     parser.add_argument(
+        "--pdf-output",
+        default=None,
+        help="Path for PDF report (default: <csv-output>.pdf)",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print detailed parsing diagnostics per invoice.",
@@ -2288,6 +2507,12 @@ def main() -> None:
     )
     write_summary_csv(totals, summary_path)
     print(f"Summary totals → {summary_path}")
+    if HAVE_PYMUPDF:
+        pdf_path = Path(args.pdf_output) if args.pdf_output else csv_path.with_suffix(".pdf")
+        write_pdf_report(records, pdf_path)
+        print(f"PDF report → {pdf_path}")
+    else:
+        print("PDF report skipped (pymupdf is not installed)")
 
 
 if __name__ == "__main__":  # pragma: no cover
