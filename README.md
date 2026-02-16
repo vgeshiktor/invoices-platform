@@ -21,6 +21,7 @@ Monorepo for invoice discovery, PDF collection, and invoice reporting across Gma
 
 - `README.md` (this file): project overview + quick start + workflow map.
 - `docs/USAGE.md`: full command reference and how-to usage for all current functionality.
+- `docs/META_BILLING_GRAPH_API_EXPLORER.md`: ready-to-paste Graph API Explorer URLs for Meta billing diagnostics.
 - `integrations/openapi/invoices.yaml`: API contract draft (broader than currently implemented Go handlers).
 
 ## Documentation Approach

@@ -287,3 +287,9 @@ make fmt
 
 - `archive/` contains historical scripts and experiments retained for reference/debugging.
 - Supported day-to-day entry points are the CLIs under `apps/workers-py/src/invplatform/cli`.
+
+## 13. Meta Billing Graph API Explorer URLs
+
+For ready-to-paste Graph API Explorer URLs (business sanity, invoices edge, ad account activities, `me/businesses`, `me/adaccounts`), see:
+
+- `docs/META_BILLING_GRAPH_API_EXPLORER.md`
