@@ -27,3 +27,4 @@ gmail_candidates.csv
 gmail_regected.json
 invoices_report.csv
 htmlcov
+.msal_token_cache.bin
