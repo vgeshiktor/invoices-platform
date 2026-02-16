@@ -22,7 +22,7 @@
     },
     {
       "parameters": {
-        "command": "make -C /workspace run-monthly MONTHLY_PROVIDERS=gmail"
+        "command": "make -C /workspace run-monthly MONTHLY_PROVIDERS=gmail,outlook GRAPH_TOKEN_CACHE_PATH=/home/node/.n8n/msal_graph_invoice_cache.bin"
       },
       "id": "7a9d5f4d-3d5b-4c20-9fd7-6b9eaa0f5d3f",
       "name": "Run Monthly Invoices",

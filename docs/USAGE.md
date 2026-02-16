@@ -254,11 +254,45 @@ make run-n8n
 Suggested workflow:
 - Trigger: Cron
 - Action: Execute Command
-- Command: `make -C /workspace run-monthly MONTHLY_PROVIDERS=gmail`
+- Daily command: `make -C /workspace run-monthly MONTHLY_PROVIDERS=gmail,outlook GRAPH_TOKEN_CACHE_PATH=/home/node/.n8n/msal_graph_invoice_cache.bin`
+- One-time/bootstrap command (manual): `make -C /workspace run-monthly MONTHLY_PROVIDERS=outlook GRAPH_INTERACTIVE_AUTH=1 GRAPH_TOKEN_CACHE_PATH=/home/node/.n8n/msal_graph_invoice_cache.bin`
 
 Notes:
 - Repo is mounted in container at `/workspace`.
 - Ensure Gmail OAuth files exist in repo root if using Gmail flow.
+- Import ready-to-use n8n workflow JSON files:
+  - `integrations/n8n/workflows/monthly_invoices_daily.json`
+  - `integrations/n8n/workflows/monthly_invoices_graph_bootstrap.json`
+
+### 9.1 Bootstrap + Daily Runbook
+
+```bash
+# 1) Ensure Graph client id exists in repo root .env
+# GRAPH_CLIENT_ID=<your-client-id>
+
+# 2) Start/recreate n8n with .env loaded
+make run-n8n
+
+# 3) One-time Graph auth bootstrap (interactive, seeds token cache)
+docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml exec n8n \
+  make -C /workspace run-monthly \
+  MONTHLY_PROVIDERS=outlook \
+  GRAPH_INTERACTIVE_AUTH=1 \
+  GRAPH_TOKEN_CACHE_PATH=/home/node/.n8n/msal_graph_invoice_cache.bin
+
+# 4) Verify env inside n8n and let daily workflow run silently
+docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml exec n8n printenv GRAPH_CLIENT_ID
+```
+
+Recovery when daily run reports `AUTH_REQUIRED`:
+
+```bash
+docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml exec n8n \
+  make -C /workspace run-monthly \
+  MONTHLY_PROVIDERS=outlook \
+  GRAPH_INTERACTIVE_AUTH=1 \
+  GRAPH_TOKEN_CACHE_PATH=/home/node/.n8n/msal_graph_invoice_cache.bin
+```
 
 ## 10. Go API
 

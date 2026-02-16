@@ -1,0 +1,45 @@
+{
+  "name": "Monthly Invoices Graph Bootstrap",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "7f1087bb-6f93-4acd-95ba-a68e8b481321",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "make -C /workspace run-monthly MONTHLY_PROVIDERS=outlook GRAPH_INTERACTIVE_AUTH=1 GRAPH_TOKEN_CACHE_PATH=/home/node/.n8n/msal_graph_invoice_cache.bin"
+      },
+      "id": "7ab8f67f-7a72-4608-8ec6-d84a66514c30",
+      "name": "Bootstrap Graph Auth",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Bootstrap Graph Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "17f31ba8-b687-46c6-8531-f3a959735e72"
+}

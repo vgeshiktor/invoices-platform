@@ -4,13 +4,13 @@ setup: ## התקנות ראשוניות
 	pre-commit install
 
 dev: ## הרצה מקומית של כל הסרוויסים (דוקר קומפוז)
-	docker compose -f deploy/compose/docker-compose.dev.yml up --build
+	docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml up --build
 
 up:
-	docker compose -f deploy/compose/docker-compose.dev.yml up -d
+	docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml up -d
 
 down:
-	docker compose -f deploy/compose/docker-compose.dev.yml down
+	docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml down
 
 test:
 	@if $(PYTHON) -c "import coverage" > /dev/null 2>&1; then \
@@ -115,7 +115,7 @@ run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate 
 		$(if $(MONTHLY_SEQUENTIAL),--sequential,)
 
 run-n8n: ## Start n8n (dev compose only)
-	docker compose -f deploy/compose/docker-compose.dev.yml up -d --build n8n
+	docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml up -d --build n8n
 
 quarantine: ## Move non-invoice PDFs into quarantine/
 	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m invplatform.cli.quarantine_invoices
