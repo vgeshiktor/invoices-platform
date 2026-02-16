@@ -264,6 +264,18 @@ Notes:
   - `integrations/n8n/workflows/monthly_invoices_daily.json`
   - `integrations/n8n/workflows/monthly_invoices_graph_bootstrap.json`
 
+Import workflows via CLI (when UI import is unavailable):
+
+```bash
+# import all JSON workflows from the repo folder
+docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml exec n8n \
+  n8n import:workflow --separate --input=/workspace/integrations/n8n/workflows
+
+# verify imported workflows
+docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml exec n8n \
+  n8n list:workflow
+```
+
 ### 9.1 Bootstrap + Daily Runbook
 
 ```bash
