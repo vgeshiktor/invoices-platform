@@ -92,9 +92,15 @@ Key functionality:
 
 Useful flags:
 - `--client-id`, `--authority`, `--start-date`, `--end-date`
+- `--interactive-auth`, `--token-cache-path`
 - `--invoices-dir`, `--keep-quarantine`
 - `--save-json`, `--save-csv`, `--save-candidates`, `--save-nonmatches`, `--download-report`
 - `--exclude-sent`, `--threshold-sweep`, `--verify`, `--explain`, `--debug`
+
+Unattended scheduling tip (n8n/cron):
+- first bootstrap run once with `--interactive-auth` and a persistent `--token-cache-path`
+- scheduled runs should omit `--interactive-auth` and reuse the same cache path
+- if cache is missing/expired, CLI exits fast with `AUTH_REQUIRED` instead of waiting for input
 
 ## 5. Monthly Orchestration
 

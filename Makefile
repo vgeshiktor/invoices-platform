@@ -48,6 +48,8 @@ GMAIL_EXTRA_ARGS ?= --save-candidates $(GMAIL_INVOICES_DIR)/reports/candidates_g
 
 GRAPH_CLIENT_ID ?=
 GRAPH_AUTHORITY ?= consumers
+GRAPH_INTERACTIVE_AUTH ?=
+GRAPH_TOKEN_CACHE_PATH ?=
 GRAPH_INVOICES_DIR ?= invoices_outlook
 GRAPH_EXTRA_ARGS ?= --save-json $(GRAPH_INVOICES_DIR)/reports/invoices.json \
 	--save-csv $(GRAPH_INVOICES_DIR)/reports/invoices.csv \
@@ -84,6 +86,8 @@ run-graph: ## הרצת Outlook/Graph invoice finder (נדרש START_DATE, END_DA
 	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m invplatform.cli.graph_invoice_finder \
 		--client-id "$(GRAPH_CLIENT_ID)" \
 		--authority "$(GRAPH_AUTHORITY)" \
+		$(if $(GRAPH_INTERACTIVE_AUTH),--interactive-auth,) \
+		$(if $(GRAPH_TOKEN_CACHE_PATH),--token-cache-path "$(GRAPH_TOKEN_CACHE_PATH)",) \
 		--start-date $(START_DATE) \
 		--end-date $(END_DATE) \
 		--invoices-dir $(GRAPH_INVOICES_DIR) \

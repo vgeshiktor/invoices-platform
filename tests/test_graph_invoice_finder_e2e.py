@@ -35,12 +35,20 @@ class _StubGraphClient:
         client_id: str,
         authority: str = "consumers",
         scopes: List[str] | None = None,
+        token_cache_path: str | None = None,
+        interactive_auth: bool = False,
+        timeout: int = 60,
+        max_retries: int = 4,
     ):
         fixture = _STUB_FIXTURE_OVERRIDE or build_september_2025_fixture()
         type(self).last_init = {
             "client_id": client_id,
             "authority": authority,
             "scopes": scopes,
+            "token_cache_path": token_cache_path,
+            "interactive_auth": interactive_auth,
+            "timeout": timeout,
+            "max_retries": max_retries,
         }
         self._messages = sorted(
             fixture["messages"], key=lambda m: m["received"], reverse=True
@@ -165,6 +173,7 @@ def test_graph_invoice_finder_september_2025(
     assert not report[
         "rejected"
     ], "No invoices should be rejected in the September baseline run."
+    assert _StubGraphClient.last_init.get("interactive_auth") is False
 
 
 def _rebuild_link_maps(
@@ -283,6 +292,7 @@ def test_graph_invoice_finder_cli_flags(
     saved_csv_path = tmp_path / "saved.csv"
     candidates_path = tmp_path / "candidates.json"
     nonmatches_path = tmp_path / "nonmatches.json"
+    cache_path = tmp_path / "msal_cache.bin"
 
     argv = [
         "graph_invoice_finder",
@@ -290,6 +300,9 @@ def test_graph_invoice_finder_cli_flags(
         "stub-client",
         "--authority",
         "common",
+        "--interactive-auth",
+        "--token-cache-path",
+        str(cache_path),
         "--start-date",
         "2025-09-01",
         "--end-date",
@@ -352,3 +365,35 @@ def test_graph_invoice_finder_cli_flags(
     ), "quarantine entry expected in report"
 
     assert _StubGraphClient.last_init.get("authority") == "common"
+    assert _StubGraphClient.last_init.get("interactive_auth") is True
+    assert _StubGraphClient.last_init.get("token_cache_path") == str(cache_path)
+
+
+def test_graph_invoice_finder_auth_required_exits_fast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    class _AuthRequiredClient:
+        def __init__(self, *args, **kwargs):  # noqa: D401, ANN002, ANN003
+            raise RuntimeError("AUTH_REQUIRED: No cached token available.")
+
+    monkeypatch.setattr(gif, "GraphClient", _AuthRequiredClient)
+    argv = [
+        "graph_invoice_finder",
+        "--client-id",
+        "stub-client",
+        "--start-date",
+        "2025-09-01",
+        "--end-date",
+        "2025-10-01",
+        "--invoices-dir",
+        str(tmp_path / "invoices"),
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    with pytest.raises(SystemExit) as exc:
+        gif.main()
+
+    out = capsys.readouterr().out
+    assert exc.value.code == 2
+    assert "AUTH_REQUIRED" in out
+    assert "--interactive-auth" in out

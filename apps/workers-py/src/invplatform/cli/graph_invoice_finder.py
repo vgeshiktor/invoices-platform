@@ -8,6 +8,14 @@ graph_invoice_finder.v3.9.2.py
 - דגל חדש: --exclude-sent
   מחפש את מזהה תיקיית Sent Items ומוסיף למסנן: parentFolderId ne '<id>'.
   כך אנחנו לא עוברים על הודעות שנשלחו.
+- אימות OAuth משופר:
+  * Token cache מתמיד (MSAL SerializableTokenCache)
+  * ניסיון silent-first לפני אינטראקציה
+  * device code רק עם --interactive-auth
+  * תמיכה ב-`--token-cache-path` (או `MSAL_TOKEN_CACHE_PATH`)
+- עמידות רשת ל-Graph:
+  * רענון טוקן פעם אחת ב-401
+  * backoff על 429/5xx (כולל Retry-After אם קיים)
 
 - כל היכולות מ-v3.9.1a נשמרו:
   * אין דריסה של קבצים (שם ייחודי + hash dedup).
@@ -261,6 +269,36 @@ def body_has_positive(t: str) -> bool:
 
 # ---------- Graph client ----------
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+MSAL_RESERVED_SCOPES = {"openid", "profile", "offline_access"}
+
+
+def normalize_msal_scopes(scopes: Optional[List[str]]) -> List[str]:
+    requested = scopes or ["User.Read", "Mail.Read"]
+    cleaned: List[str] = []
+    removed: List[str] = []
+    seen: Set[str] = set()
+    for scope in requested:
+        item = (scope or "").strip()
+        if not item:
+            continue
+        key = item.lower()
+        if key in MSAL_RESERVED_SCOPES:
+            removed.append(item)
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+
+    if not cleaned:
+        raise ValueError("At least one non-reserved scope is required for Graph token acquisition.")
+
+    if removed:
+        logging.debug(
+            "Ignoring reserved OAuth scopes for MSAL: %s", ", ".join(sorted(set(removed)))
+        )
+
+    return cleaned
 
 
 class GraphClient:  # pragma: no cover - requires live Graph API/MSAL
@@ -269,24 +307,69 @@ class GraphClient:  # pragma: no cover - requires live Graph API/MSAL
         client_id: str,
         authority: str = "consumers",
         scopes: Optional[List[str]] = None,
+        token_cache_path: Optional[str] = None,
+        interactive_auth: bool = False,
+        timeout: int = 60,
+        max_retries: int = 4,
     ):
         self.client_id = client_id
         self.authority = f"https://login.microsoftonline.com/{authority}"
-        self.scopes = scopes or ["User.Read", "Mail.Read"]
+        self.scopes = normalize_msal_scopes(scopes)
+        self.timeout = timeout
+        self.max_retries = max_retries
+        cache_env = os.environ.get("MSAL_TOKEN_CACHE_PATH")
+        cache_candidate = token_cache_path or cache_env or "~/.msal_graph_invoice_cache.bin"
+        self.token_cache_path = pathlib.Path(cache_candidate).expanduser()
+
+        self.cache = msal.SerializableTokenCache()
+        if self.token_cache_path.exists():
+            try:
+                self.cache.deserialize(self.token_cache_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                logging.warning("Failed to read token cache (%s): %s", self.token_cache_path, exc)
+
+        self.app = msal.PublicClientApplication(
+            self.client_id,
+            authority=self.authority,
+            token_cache=self.cache,
+        )
         self.session = requests.Session()
-        self.token = self._acquire_token_device_code()
+        self.token = self._acquire_token(interactive=interactive_auth)
         self.session.headers.update({"Authorization": f"Bearer {self.token}"})
 
-    def _acquire_token_device_code(self) -> str:
-        app = msal.PublicClientApplication(self.client_id, authority=self.authority)
+    def _persist_cache(self) -> None:
+        if not self.cache.has_state_changed:
+            return
+        self.token_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self.token_cache_path.write_text(self.cache.serialize(), encoding="utf-8")
+
+    def _acquire_token_silent(self) -> Optional[str]:
+        accounts = self.app.get_accounts()
+        if not accounts:
+            return None
+        result = self.app.acquire_token_silent(self.scopes, account=accounts[0])
+        if result and "access_token" in result:
+            self._persist_cache()
+            return result["access_token"]
+        return None
+
+    def _acquire_token(self, interactive: bool) -> str:
+        token = self._acquire_token_silent()
+        if token:
+            return token
+
+        if not interactive:
+            raise RuntimeError(
+                "AUTH_REQUIRED: No cached token available. Run once with --interactive-auth to authorize."
+            )
 
         def run_flow() -> dict:
-            flow = app.initiate_device_flow(scopes=self.scopes)
+            flow = self.app.initiate_device_flow(scopes=self.scopes)
             if "user_code" not in flow:
                 raise RuntimeError("MSAL device flow init failed")
             print("== Device Code Authentication ==")
             print(flow["message"])
-            return app.acquire_token_by_device_flow(flow)
+            return self.app.acquire_token_by_device_flow(flow)
 
         res = run_flow()
         if res.get("error") == "expired_token":
@@ -294,11 +377,58 @@ class GraphClient:  # pragma: no cover - requires live Graph API/MSAL
             res = run_flow()
         if "access_token" not in res:
             raise RuntimeError(f"MSAL failed: {res}")
+        self._persist_cache()
         return res["access_token"]
 
+    def _refresh_access_token(self) -> bool:
+        token = self._acquire_token_silent()
+        if not token:
+            return False
+        self.token = token
+        self.session.headers.update({"Authorization": f"Bearer {self.token}"})
+        return True
+
+    def _retry_delay_seconds(self, response: requests.Response, attempt: int) -> float:
+        retry_after = (response.headers.get("Retry-After") or "").strip()
+        if retry_after:
+            try:
+                val = float(retry_after)
+                if val > 0:
+                    return val
+            except ValueError:
+                pass
+        return float(min(30, 2**attempt))
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        params: Optional[dict] = None,
+        headers: Optional[dict] = None,
+    ) -> requests.Response:
+        req_headers = dict(headers or {})
+        refreshed = False
+        attempt = 0
+        while True:
+            r = self.session.request(
+                method=method,
+                url=url,
+                params=params,
+                headers=req_headers,
+                timeout=self.timeout,
+            )
+            if r.status_code == 401 and not refreshed:
+                refreshed = True
+                if self._refresh_access_token():
+                    continue
+            if r.status_code in {429, 500, 502, 503, 504} and attempt < self.max_retries:
+                time.sleep(self._retry_delay_seconds(r, attempt))
+                attempt += 1
+                continue
+            return r
+
     def get(self, url: str, params: dict = None, headers: dict = None) -> dict:
-        h = dict(headers or {})
-        r = self.session.get(url, params=params or {}, headers=h)
+        r = self._request("GET", url=url, params=params, headers=headers)
         if r.status_code >= 400:
             raise RuntimeError(f"Graph GET failed {r.status_code}: {r.text}")
         return r.json()
@@ -356,7 +486,7 @@ class GraphClient:  # pragma: no cover - requires live Graph API/MSAL
 
     def download_attachment(self, msg_id: str, att_id: str) -> bytes:
         url = f"{GRAPH_BASE}/me/messages/{msg_id}/attachments/{att_id}/$value"
-        r = self.session.get(url)
+        r = self._request("GET", url=url)
         if r.status_code >= 400:
             raise RuntimeError(f"Graph GET attach failed {r.status_code}: {r.text}")
         return r.content
@@ -605,6 +735,16 @@ def main():  # pragma: no cover - CLI entry point
     )
     ap.add_argument("--client-id", required=True)
     ap.add_argument("--authority", default="consumers")
+    ap.add_argument(
+        "--interactive-auth",
+        action="store_true",
+        help="אפשר הרשאה אינטראקטיבית (device code) אם אין טוקן שמור בקאש.",
+    )
+    ap.add_argument(
+        "--token-cache-path",
+        default=os.environ.get("MSAL_TOKEN_CACHE_PATH"),
+        help="נתיב לקובץ MSAL token cache מתמיד. ברירת מחדל: $MSAL_TOKEN_CACHE_PATH או ~/.msal_graph_invoice_cache.bin",
+    )
     ap.add_argument("--start-date", required=True, help="YYYY-MM-DD")
     ap.add_argument("--end-date", required=True, help="YYYY-MM-DD (exclusive)")
 
@@ -662,7 +802,21 @@ def main():  # pragma: no cover - CLI entry point
         sys.exit(3)
     start_iso, end_iso = start_dt.isoformat(), end_dt.isoformat()
 
-    gc = GraphClient(client_id=args.client_id, authority=args.authority)
+    try:
+        gc = GraphClient(
+            client_id=args.client_id,
+            authority=args.authority,
+            token_cache_path=args.token_cache_path,
+            interactive_auth=args.interactive_auth,
+        )
+    except RuntimeError as exc:
+        if str(exc).startswith("AUTH_REQUIRED:"):
+            print(str(exc))
+            print(
+                "Tip: run once with --interactive-auth (and a persistent --token-cache-path) to bootstrap unattended runs."
+            )
+            sys.exit(2)
+        raise
 
     # אוסף תיקיות להחרגה
     exclude_ids: List[str] = []
