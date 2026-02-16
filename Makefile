@@ -49,7 +49,7 @@ GMAIL_EXTRA_ARGS ?= --save-candidates $(GMAIL_INVOICES_DIR)/reports/candidates_g
 GRAPH_CLIENT_ID ?=
 GRAPH_AUTHORITY ?= consumers
 GRAPH_INTERACTIVE_AUTH ?=
-GRAPH_TOKEN_CACHE_PATH ?=
+GRAPH_TOKEN_CACHE_PATH ?= ./.msal_token_cache.bin
 GRAPH_INVOICES_DIR ?= invoices_outlook
 GRAPH_EXTRA_ARGS ?= --save-json $(GRAPH_INVOICES_DIR)/reports/invoices.json \
 	--save-csv $(GRAPH_INVOICES_DIR)/reports/invoices.csv \
@@ -61,7 +61,9 @@ GRAPH_EXTRA_ARGS ?= --save-json $(GRAPH_INVOICES_DIR)/reports/invoices.json \
 MONTHLY_BASE_DIR ?= invoices
 MONTHLY_PROVIDERS ?= gmail,outlook
 MONTHLY_GMAIL_ARGS ?= --exclude-sent --verify
-MONTHLY_GRAPH_ARGS ?= --exclude-sent --verify --explain
+MONTHLY_GRAPH_ARGS ?= --exclude-sent --verify --explain \
+	$(if $(GRAPH_TOKEN_CACHE_PATH),--token-cache-path $(GRAPH_TOKEN_CACHE_PATH),) \
+	$(if $(GRAPH_INTERACTIVE_AUTH),--interactive-auth,)
 MONTHLY_SEQUENTIAL ?=
 
 REPORT_INPUT_DIR ?= invoices_outlook

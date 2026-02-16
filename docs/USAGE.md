@@ -121,6 +121,12 @@ MONTH=1 YEAR=2026 make run-monthly GRAPH_CLIENT_ID=<client-id>
 
 # only Gmail
 MONTHLY_PROVIDERS=gmail make run-monthly
+
+# Outlook/Gmail with persisted Graph token cache (seamless after bootstrap)
+make run-monthly GRAPH_CLIENT_ID=<client-id> GRAPH_TOKEN_CACHE_PATH=./.msal_token_cache.bin
+
+# one-time Graph bootstrap auth for monthly flow (interactive device code)
+make run-monthly GRAPH_CLIENT_ID=<client-id> GRAPH_INTERACTIVE_AUTH=1 GRAPH_TOKEN_CACHE_PATH=./.msal_token_cache.bin
 ```
 
 Behavior:
