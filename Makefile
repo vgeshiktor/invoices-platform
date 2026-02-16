@@ -104,6 +104,11 @@ run-report: ## Generate invoice report JSON/CSV from downloaded PDFs
 		$(REPORT_EXTRA_ARGS)
 
 run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate under invoices/
+	@start_epoch=$$(date +%s); \
+	start_local=$$(date '+%Y-%m-%d %H:%M:%S %Z%z'); \
+	start_utc=$$(date -u '+%Y-%m-%d %H:%M:%S UTC'); \
+	echo "[MONTHLY_RUN] START local=$$start_local utc=$$start_utc"; \
+	run_status=0; \
 	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m invplatform.cli.monthly_invoices \
 		--providers "$(MONTHLY_PROVIDERS)" \
 		--base-dir $(MONTHLY_BASE_DIR) \
@@ -112,7 +117,19 @@ run-monthly: ## Download current-month invoices (Gmail+Outlook) and consolidate 
 		$(if $(MONTHLY_GMAIL_ARGS),--gmail-extra-args "$(MONTHLY_GMAIL_ARGS)",) \
 		$(if $(MONTHLY_GRAPH_ARGS),--graph-extra-args "$(MONTHLY_GRAPH_ARGS)",) \
 		$(if $(GRAPH_CLIENT_ID),--graph-client-id "$(GRAPH_CLIENT_ID)",) \
-		$(if $(MONTHLY_SEQUENTIAL),--sequential,)
+		$(if $(MONTHLY_SEQUENTIAL),--sequential,) \
+	|| run_status=$$?; \
+	end_epoch=$$(date +%s); \
+	end_local=$$(date '+%Y-%m-%d %H:%M:%S %Z%z'); \
+	end_utc=$$(date -u '+%Y-%m-%d %H:%M:%S UTC'); \
+	duration=$$((end_epoch - start_epoch)); \
+	duration_h=$$((duration / 3600)); \
+	duration_m=$$(((duration % 3600) / 60)); \
+	duration_s=$$((duration % 60)); \
+	echo "[MONTHLY_RUN] END local=$$end_local utc=$$end_utc"; \
+	printf '[MONTHLY_RUN] DURATION %02dh:%02dm:%02ds (%ss)\n' $$duration_h $$duration_m $$duration_s $$duration; \
+	echo "[MONTHLY_RUN] STATUS exit_code=$$run_status"; \
+	exit $$run_status
 
 run-n8n: ## Start n8n (dev compose only)
 	docker compose --env-file .env -f deploy/compose/docker-compose.dev.yml up -d --build n8n

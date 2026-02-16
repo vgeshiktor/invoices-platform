@@ -1,8 +1,9 @@
-FROM node:20-bullseye
+FROM node:20-bookworm
 
 USER root
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

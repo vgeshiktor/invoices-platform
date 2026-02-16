@@ -6,13 +6,13 @@
         "triggerTimes": [
           {
             "mode": "everyDay",
-            "hour": 6,
+            "hour": 23,
             "minute": 0
           }
         ]
       },
       "id": "b2d6a3b9-98e7-4a8e-9e9d-4ff2b0b7a2c1",
-      "name": "Daily 06:00",
+      "name": "Daily 23:00",
       "type": "n8n-nodes-base.cron",
       "typeVersion": 1,
       "position": [
@@ -35,7 +35,7 @@
     }
   ],
   "connections": {
-    "Daily 06:00": {
+    "Daily 23:00": {
       "main": [
         [
           {
