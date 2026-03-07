@@ -200,3 +200,41 @@ def test_sender_domain_and_trust_detection():
 def test_should_consider_message():
     assert gmail.should_consider_message("חשבונית מס קבלה", "")
     assert not gmail.should_consider_message("תלוש שכר", "")
+
+
+def test_payload_has_pdf_attachment():
+    payload = {
+        "parts": [
+            {"mimeType": "text/plain", "body": {"data": "abc"}},
+            {
+                "mimeType": "application/pdf",
+                "filename": "inv.pdf",
+                "body": {"attachmentId": "att-1"},
+            },
+        ]
+    }
+    assert gmail.payload_has_pdf_attachment(payload)
+    assert not gmail.payload_has_pdf_attachment({"parts": []})
+
+
+def test_should_fetch_full_message_prefilter():
+    metadata_payload = {
+        "parts": [
+            {
+                "mimeType": "application/pdf",
+                "filename": "inv.pdf",
+                "body": {"attachmentId": "att-1"},
+            }
+        ]
+    }
+    assert gmail.should_fetch_full_message("", "", True, {}, disable_prefilter=False)
+    assert gmail.should_fetch_full_message(
+        "חשבונית מס קבלה", "", False, {}, disable_prefilter=False
+    )
+    assert gmail.should_fetch_full_message(
+        "", "", False, metadata_payload, disable_prefilter=False
+    )
+    assert not gmail.should_fetch_full_message(
+        "newsletter", "weekly digest", False, {}, False
+    )
+    assert gmail.should_fetch_full_message("newsletter", "", False, {}, True)

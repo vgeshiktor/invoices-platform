@@ -59,7 +59,6 @@ import logging
 import os
 import pathlib
 import re
-import sys
 import time
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, urlparse
@@ -710,6 +709,57 @@ def should_consider_message(subject: str, preview: str) -> bool:
     return body_has_positive(t) or is_municipal_text(t)
 
 
+def is_retryable_reason(reason: str) -> bool:
+    text = (reason or "").lower()
+    return "_fail" in text or "timeout" in text or "rate" in text
+
+
+def load_cached_processed_message_ids(report_path: Optional[str]) -> Set[str]:
+    if not report_path:
+        return set()
+    p = pathlib.Path(report_path)
+    if not p.exists():
+        return set()
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    if not isinstance(payload, dict):
+        return set()
+
+    ids: Set[str] = set()
+
+    for row in payload.get("saved", []) or []:
+        if isinstance(row, dict):
+            mid = row.get("id")
+            if isinstance(mid, str) and mid:
+                ids.add(mid)
+
+    for row in payload.get("rejected", []) or []:
+        if not isinstance(row, dict):
+            continue
+        mid = row.get("id")
+        if not (isinstance(mid, str) and mid):
+            continue
+        reason = row.get("reason") or ""
+        if is_retryable_reason(str(reason)):
+            continue
+        ids.add(mid)
+
+    for row in payload.get("report", []) or []:
+        if not isinstance(row, dict):
+            continue
+        mid = row.get("msg_id") or row.get("id")
+        if not (isinstance(mid, str) and mid):
+            continue
+        reject = row.get("reject") or ""
+        if is_retryable_reason(str(reject)):
+            continue
+        ids.add(mid)
+
+    return ids
+
+
 def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, Dict]:
     stats = pdf_keyword_stats(path)
     pos_hits = stats.get("pos_hits", 0) or 0
@@ -729,7 +779,7 @@ def decide_pdf_relevance(path: str, trusted_hint: bool = False) -> Tuple[bool, D
 
 
 # ---------- Main ----------
-def main():  # pragma: no cover - CLI entry point
+def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI entry point
     ap = argparse.ArgumentParser(
         description="Graph Invoice Finder v3.9.2 (exclude sent + strict relevance)"
     )
@@ -775,8 +825,13 @@ def main():  # pragma: no cover - CLI entry point
     ap.add_argument("--bezeq-headful", action="store_true")
     ap.add_argument("--bezeq-trace", action="store_true")
     ap.add_argument("--bezeq-screenshots", action="store_true")
+    ap.add_argument(
+        "--disable-message-cache",
+        action="store_true",
+        help="Ignore existing download report cache and rescan all messages.",
+    )
     ap.add_argument("--debug", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(message)s")
 
@@ -799,7 +854,7 @@ def main():  # pragma: no cover - CLI entry point
         end_dt = dt.datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
     except ValueError:
         print("פורמט תאריך לא תקין. השתמשו ב-YYYY-MM-DD")
-        sys.exit(3)
+        raise SystemExit(3)
     start_iso, end_iso = start_dt.isoformat(), end_dt.isoformat()
 
     try:
@@ -815,7 +870,7 @@ def main():  # pragma: no cover - CLI entry point
             print(
                 "Tip: run once with --interactive-auth (and a persistent --token-cache-path) to bootstrap unattended runs."
             )
-            sys.exit(2)
+            raise SystemExit(2)
         raise
 
     # אוסף תיקיות להחרגה
@@ -832,7 +887,15 @@ def main():  # pragma: no cover - CLI entry point
     saved_confidences: List[float] = []
     seen_hashes: Set[str] = set()
     hash_to_saved_path: Dict[str, str] = {}
-    processed_msg_ids: Set[str] = set()
+    processed_msg_ids: Set[str] = (
+        set()
+        if args.disable_message_cache
+        else load_cached_processed_message_ids(args.download_report)
+    )
+    cached_skipped = 0
+    attachment_list_calls = 0
+    body_fetch_calls = 0
+    loop_start = time.monotonic()
 
     def record_candidate(entry: Dict):
         if args.save_candidates:
@@ -862,9 +925,10 @@ def main():  # pragma: no cover - CLI entry point
     ):
         msg_idx += 1
         msg_id = msg.get("id")
+        if not msg_id:
+            continue
         if msg_id in processed_msg_ids:
-            if args.explain:
-                logging.info("Skip duplicate message %s", msg_id)
+            cached_skipped += 1
             continue
         processed_msg_ids.add(msg_id)
         subject = msg.get("subject") or ""
@@ -908,6 +972,7 @@ def main():  # pragma: no cover - CLI entry point
         # ---- A) Attachments ----
         atts = []
         if has_attachments:
+            attachment_list_calls += 1
             try:
                 atts = gc.list_attachments(msg_id)
             except Exception as e:
@@ -1049,6 +1114,7 @@ def main():  # pragma: no cover - CLI entry point
 
         # ---- B) Links ----
         if not any_saved:
+            body_fetch_calls += 1
             try:
                 html = gc.get_message_body_html(msg_id)
             except Exception as e:
@@ -1350,6 +1416,17 @@ def main():  # pragma: no cover - CLI entry point
         if not any_saved and not has_attachments:
             record_rejection("no_attach_no_pdf_links")
 
+    loop_seconds = time.monotonic() - loop_start
+    logging.info(
+        "[OUTLOOK_STAGE] scanned=%d cached_skipped=%d processed=%d attachment_list_calls=%d body_fetch_calls=%d duration=%ss",
+        msg_idx,
+        cached_skipped,
+        msg_idx - cached_skipped,
+        attachment_list_calls,
+        body_fetch_calls,
+        f"{loop_seconds:.1f}",
+    )
+
     # ----- Reports -----
     if args.threshold_sweep:
         try:
@@ -1415,7 +1492,17 @@ def main():  # pragma: no cover - CLI entry point
         print(f"Saved nonmatches → {args.save_nonmatches}")
 
     print(f"Done. Saved {len(saved_rows)} invoices; Rejected {len(rejected_rows)}.")
+    return 0
+
+
+def run(argv: Optional[List[str]] = None) -> int:
+    """Programmatic entry point for callers that need an exit code."""
+    try:
+        return int(main(argv))
+    except SystemExit as exc:
+        code = exc.code
+        return int(code) if isinstance(code, int) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

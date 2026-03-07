@@ -28,8 +28,8 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
@@ -38,7 +38,6 @@ from invplatform.domain import pdf as domain_pdf
 
 
 PROJECT_SRC = Path(__file__).resolve().parents[2]
-REPO_ROOT = PROJECT_SRC.parents[2]
 DEFAULT_PYTHON = os.environ.get("PYTHON") or sys.executable
 SKIP_DIRS = {"_tmp", "quarantine", "duplicates"}
 HAVE_PYMUPDF = getattr(domain_pdf, "HAVE_PYMUPDF", False)
@@ -61,6 +60,15 @@ class ProviderResult:
     invoices_dir: Path
     command: List[str]
     returncode: int
+    duration_seconds: float = 0.0
+
+
+def fmt_duration(seconds: float) -> str:
+    total = max(0, int(seconds))
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    return f"{h:02d}h:{m:02d}m:{s:02d}s"
 
 
 def month_window(year: int | None, month: int | None) -> Tuple[str, str, str]:
@@ -322,17 +330,51 @@ def build_runs(
 
 
 def run_provider(run: ProviderRun) -> ProviderResult:
-    env = os.environ.copy()
-    env["PYTHONPATH"] = merged_pythonpath(PROJECT_SRC, env.get("PYTHONPATH"))
+    def _resolve_runner(name: str):
+        if name == "gmail":
+            from invplatform.cli import gmail_invoice_finder as gmail_finder
+
+            return gmail_finder.run
+        if name == "outlook":
+            from invplatform.cli import graph_invoice_finder as graph_finder
+
+            return graph_finder.run
+        raise ValueError(f"Unknown provider: {name}")
+
+    def _provider_argv(command: Sequence[str]) -> List[str]:
+        # Legacy command layout: [python, -m, module, ...args]
+        if len(command) >= 3 and command[1] == "-m":
+            return list(command[3:])
+        return list(command)
+
     run.invoices_dir.mkdir(parents=True, exist_ok=True)
+    stage_start = time.monotonic()
+    start_utc = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    print(f"[MONTHLY_STAGE] {run.name} START utc={start_utc}")
     print(f"[{run.name}] running: {' '.join(run.command)}")
-    proc = subprocess.run(run.command, cwd=REPO_ROOT, env=env)
-    print(f"[{run.name}] finished with code {proc.returncode}")
+    runner = _resolve_runner(run.name)
+    argv = _provider_argv(run.command)
+    try:
+        returncode = int(runner(argv))
+    except SystemExit as exc:
+        code = exc.code
+        returncode = int(code) if isinstance(code, int) else 1
+    except Exception as exc:
+        print(f"[{run.name}] failed with exception: {exc}")
+        returncode = 1
+    duration = time.monotonic() - stage_start
+    end_utc = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    print(f"[{run.name}] finished with code {returncode}")
+    print(
+        f"[MONTHLY_STAGE] {run.name} END utc={end_utc} "
+        f"duration={fmt_duration(duration)} ({duration:.1f}s) exit_code={returncode}"
+    )
     return ProviderResult(
         name=run.name,
         invoices_dir=run.invoices_dir,
         command=run.command,
-        returncode=proc.returncode,
+        returncode=returncode,
+        duration_seconds=duration,
     )
 
 
@@ -354,6 +396,7 @@ def write_summary(
     results: List[ProviderResult],
     consolidation: Dict[str, int],
     dedupe: Dict[str, Dict[str, int]],
+    stage_timings: Dict[str, object],
 ) -> None:
     summary = {
         "start_date": start_date,
@@ -365,11 +408,13 @@ def write_summary(
                 "invoices_dir": str(r.invoices_dir),
                 "returncode": r.returncode,
                 "command": " ".join(r.command),
+                "duration_seconds": round(r.duration_seconds, 3),
             }
             for r in results
         },
         "consolidation": consolidation,
         "deduplication": dedupe,
+        "timings": stage_timings,
     }
     dest_dir.mkdir(parents=True, exist_ok=True)
     manifest = dest_dir / "run_summary.json"
@@ -416,6 +461,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    total_start = time.monotonic()
     args = parse_args()
     start_date, end_date, month_label = month_window(args.year, args.month)
     base_dir = Path(args.base_dir).expanduser()
@@ -438,15 +484,47 @@ def main() -> None:
         f"Running providers {providers} for {month_label} "
         f"({start_date} -> {end_date}, base={base_dir})"
     )
+    provider_stage_start = time.monotonic()
     results = run_all(runs, parallel=not args.sequential)
+    provider_stage_seconds = time.monotonic() - provider_stage_start
+    print(
+        "[MONTHLY_STAGE] providers_total "
+        f"duration={fmt_duration(provider_stage_seconds)} ({provider_stage_seconds:.1f}s)"
+    )
     # Deduplicate inside each successful provider directory before consolidation.
     dedupe_stats: Dict[str, Dict[str, int]] = {}
+    dedupe_timings: Dict[str, float] = {}
     for r in results:
         if r.returncode == 0:
+            d_start = time.monotonic()
             dedupe_stats[r.name] = dedupe_provider_dir(r.invoices_dir)
+            d_seconds = time.monotonic() - d_start
+            dedupe_timings[r.name] = round(d_seconds, 3)
+            print(
+                f"[MONTHLY_STAGE] dedupe:{r.name} "
+                f"duration={fmt_duration(d_seconds)} ({d_seconds:.1f}s)"
+            )
     consolidated_dir = base_dir / f"invoices_{month_label}"
     successful_dirs = [r.invoices_dir for r in results if r.returncode == 0]
+    consolidate_start = time.monotonic()
+    print("[MONTHLY_STAGE] consolidate START")
     consolidation_stats = consolidate_pdfs(consolidated_dir, successful_dirs)
+    consolidate_seconds = time.monotonic() - consolidate_start
+    print(
+        "[MONTHLY_STAGE] consolidate END "
+        f"duration={fmt_duration(consolidate_seconds)} ({consolidate_seconds:.1f}s) "
+        f"copied={consolidation_stats.get('copied', 0)} "
+        f"duplicates={consolidation_stats.get('duplicates', 0)}"
+    )
+    total_seconds = time.monotonic() - total_start
+    print("[MONTHLY_STAGE] total " f"duration={fmt_duration(total_seconds)} ({total_seconds:.1f}s)")
+    stage_timings = {
+        "providers_total_seconds": round(provider_stage_seconds, 3),
+        "per_provider_seconds": {r.name: round(r.duration_seconds, 3) for r in results},
+        "dedupe_per_provider_seconds": dedupe_timings,
+        "consolidation_seconds": round(consolidate_seconds, 3),
+        "total_seconds": round(total_seconds, 3),
+    }
     write_summary(
         consolidated_dir,
         start_date,
@@ -455,6 +533,7 @@ def main() -> None:
         results,
         consolidation_stats,
         dedupe_stats,
+        stage_timings,
     )
     failures = [r for r in results if r.returncode != 0]
     if failures:

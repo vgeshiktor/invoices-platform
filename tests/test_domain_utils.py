@@ -104,3 +104,114 @@ def test_pdf_keyword_stats_and_confidence(monkeypatch, tmp_path):
         0.75
     )
     assert domain_pdf.pdf_confidence({"pos_hits": 0, "neg_hits": 0}) == 0.0
+
+
+def test_pdf_text_hint_helpers():
+    assert not domain_pdf.text_has_amount_hint("")
+    assert domain_pdf.text_has_amount_hint("Total: ₪123")
+    assert domain_pdf.text_has_amount_hint("Amount 1,234.56 due")
+    assert not domain_pdf.text_has_amount_hint("no numeric hint here")
+
+    assert not domain_pdf.text_has_invoice_id("")
+    assert domain_pdf.text_has_invoice_id("Invoice # 12345")
+    assert domain_pdf.text_has_invoice_id("מספר חשבונית 42")
+    assert not domain_pdf.text_has_invoice_id("hello world")
+
+
+def test_text_fingerprint_edge_paths(monkeypatch):
+    monkeypatch.setattr(domain_pdf, "HAVE_PYMUPDF", False)
+    assert domain_pdf.text_fingerprint("x.pdf") is None
+
+    monkeypatch.setattr(domain_pdf, "HAVE_PYMUPDF", True)
+
+    class DummyPage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self, mode):
+            assert mode == "text"
+            return self._text
+
+    class DummyDoc:
+        def __init__(self, pages):
+            self._pages = pages
+
+        def __iter__(self):
+            return iter(self._pages)
+
+    monkeypatch.setattr(
+        domain_pdf,
+        "fitz",
+        SimpleNamespace(open=lambda _path: DummyDoc([DummyPage(""), DummyPage("   ")])),
+    )
+    assert domain_pdf.text_fingerprint("x.pdf") is None
+
+    def _boom(_path):
+        raise RuntimeError("fail open")
+
+    monkeypatch.setattr(domain_pdf, "fitz", SimpleNamespace(open=_boom))
+    assert domain_pdf.text_fingerprint("x.pdf") is None
+
+
+def test_text_fingerprint_stops_at_max_chars(monkeypatch):
+    monkeypatch.setattr(domain_pdf, "HAVE_PYMUPDF", True)
+    seen = {"pages": 0}
+
+    class DummyPage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self, mode):
+            assert mode == "text"
+            seen["pages"] += 1
+            return self._text
+
+    class DummyDoc:
+        def __iter__(self):
+            return iter([DummyPage("abcde"), DummyPage("fghij"), DummyPage("klmno")])
+
+    monkeypatch.setattr(
+        domain_pdf, "fitz", SimpleNamespace(open=lambda _path: DummyDoc())
+    )
+    fp = domain_pdf.text_fingerprint("x.pdf", max_chars=6)
+    assert fp is not None
+    assert seen["pages"] == 2
+
+
+def test_pdf_keyword_stats_no_pymupdf_short_circuit(monkeypatch):
+    monkeypatch.setattr(domain_pdf, "HAVE_PYMUPDF", False)
+    stats = domain_pdf.pdf_keyword_stats("x.pdf")
+    assert stats["pos_hits"] == 0
+    assert stats["neg_hits"] == 0
+    assert stats["amount_hint"] is None
+
+
+def test_pdf_keyword_stats_tracks_weak_strong_and_hebrew_neg(monkeypatch):
+    monkeypatch.setattr(domain_pdf, "HAVE_PYMUPDF", True)
+    monkeypatch.setattr(domain_pdf.constants, "EN_POS", ["invoice"])
+    monkeypatch.setattr(domain_pdf.constants, "HEB_POS", ["חשבונית", "חשבונית מס"])
+    monkeypatch.setattr(domain_pdf.constants, "EN_NEG", [])
+    monkeypatch.setattr(domain_pdf.constants, "HEB_NEG", ["תלוש שכר"])
+    monkeypatch.setattr(domain_pdf, "STRONG_POS", {"invoice", "חשבונית מס"})
+    monkeypatch.setattr(domain_pdf, "WEAK_POS", {"חשבונית"})
+
+    class DummyPage:
+        def get_text(self, mode):
+            assert mode == "text"
+            return "invoice חשבונית חשבונית מס תלוש שכר"
+
+    class DummyDoc:
+        def __iter__(self):
+            return iter([DummyPage()])
+
+    monkeypatch.setattr(
+        domain_pdf, "fitz", SimpleNamespace(open=lambda _path: DummyDoc())
+    )
+    stats = domain_pdf.pdf_keyword_stats("x.pdf")
+    assert stats["strong_hits"] >= 2
+    assert stats["weak_hits"] >= 1
+    assert stats["neg_hits"] >= 1
+
+
+def test_pdf_confidence_pos_without_neg_is_one():
+    assert domain_pdf.pdf_confidence({"pos_hits": 1, "neg_hits": 0}) == 1.0

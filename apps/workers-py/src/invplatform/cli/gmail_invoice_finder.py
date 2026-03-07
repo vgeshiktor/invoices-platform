@@ -63,8 +63,8 @@ import json
 import logging
 import os
 import re
-import sys
 import time
+import webbrowser
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -169,13 +169,24 @@ class GmailClient:  # pragma: no cover - requires live Google OAuth
                     self.creds = None
             if not self.creds or not self.creds.valid:
                 flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
-                self.creds = flow.run_local_server(
-                    host="localhost",
-                    port=8080,
-                    access_type="offline",
-                    prompt="consent",
-                    include_granted_scopes="true",
-                )
+                try:
+                    self.creds = flow.run_local_server(
+                        host="localhost",
+                        port=8080,
+                        access_type="offline",
+                        prompt="consent",
+                        include_granted_scopes="true",
+                    )
+                except webbrowser.Error as e:
+                    raise SystemExit(
+                        "Gmail OAuth bootstrap failed: no runnable browser in this environment.\n"
+                        "Generate/refresh token.json once on a machine with a browser, then rerun.\n"
+                        "Example:\n"
+                        "  PYTHONPATH=apps/workers-py/src python -m invplatform.cli.gmail_invoice_finder \\\n"
+                        "    --start-date 2026-01-01 --end-date 2026-02-01 \\\n"
+                        "    --invoices-dir invoices/invoices_gmail_01_2026 --exclude-sent --verify\n"
+                        f"Original error: {e}"
+                    ) from e
 
             with open(token_path, "w") as token:
                 token.write(self.creds.to_json())
@@ -209,6 +220,19 @@ class GmailClient:  # pragma: no cover - requires live Google OAuth
 
     def get_message(self, msg_id: str) -> Dict:
         return self.svc.users().messages().get(userId="me", id=msg_id, format="full").execute()
+
+    def get_message_metadata(self, msg_id: str) -> Dict:
+        return (
+            self.svc.users()
+            .messages()
+            .get(
+                userId="me",
+                id=msg_id,
+                format="metadata",
+                metadataHeaders=["Subject", "From"],
+            )
+            .execute()
+        )
 
     def get_attachment(self, msg_id: str, att_id: str) -> bytes:
         res = (
@@ -796,8 +820,35 @@ def should_consider_message(subject: str, preview: str) -> bool:
     return body_has_positive(t) or is_municipal_text(t)
 
 
+def payload_has_pdf_attachment(payload: dict) -> bool:
+    for p in extract_parts(payload):
+        body = p.get("body") or {}
+        att_id = body.get("attachmentId")
+        if not att_id:
+            continue
+        mime = (p.get("mimeType") or "").lower()
+        filename = (p.get("filename") or "").lower()
+        if "pdf" in mime or filename.endswith(".pdf"):
+            return True
+    return False
+
+
+def should_fetch_full_message(
+    subject: str,
+    preview: str,
+    sender_trusted: bool,
+    metadata_payload: dict,
+    disable_prefilter: bool = False,
+) -> bool:
+    if disable_prefilter:
+        return True
+    if sender_trusted or should_consider_message(subject, preview):
+        return True
+    return payload_has_pdf_attachment(metadata_payload)
+
+
 # --------------------------- Main ---------------------------
-def main():  # pragma: no cover - CLI orchestration
+def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orchestration
     ap = argparse.ArgumentParser(description="Gmail Invoice Finder v1.0")
     ap.add_argument("--credentials", default="credentials.json")
     ap.add_argument("--token", default="token.json")
@@ -817,6 +868,11 @@ def main():  # pragma: no cover - CLI orchestration
         "--save-nonmatches", default=None, help="Dump rejected message metadata to JSON"
     )
     ap.add_argument("--max-messages", type=int, default=1000)
+    ap.add_argument(
+        "--disable-metadata-prefilter",
+        action="store_true",
+        help="Fetch full Gmail message bodies for all hits (slower, legacy behavior).",
+    )
 
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--explain", action="store_true")
@@ -830,7 +886,7 @@ def main():  # pragma: no cover - CLI orchestration
     ap.add_argument("--bezeq-trace", action="store_true")
     ap.add_argument("--bezeq-screenshots", action="store_true")  # לא בשימוש ישיר כאן, דגל עתידי
     ap.add_argument("--debug", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format="%(message)s")
 
@@ -844,7 +900,7 @@ def main():  # pragma: no cover - CLI orchestration
     else:
         if not (args.start_date and args.end_date):
             print("כשלא מספקים --gmail-query חובה לתת --start-date ו--end-date לבניית השאילתא.")
-            sys.exit(2)
+            return 2
         query = build_gmail_query(args.start_date, args.end_date, exclude_sent=args.exclude_sent)
 
     logging.info(f"Gmail query: {query}")
@@ -896,18 +952,64 @@ def main():  # pragma: no cover - CLI orchestration
             logging.info("    nonmatch[%s]: %s", subj, entry.get("reason"))
 
     idx = 0
+    full_fetch_count = 0
+    prefilter_skipped = 0
+    scan_start = time.monotonic()
     for msg_id in gc.list_messages(query, max_results=args.max_messages):
         idx += 1
         try:
-            msg = gc.get_message(msg_id)
+            msg_meta = gc.get_message_metadata(msg_id)
         except Exception as e:
-            record_nonmatch({"id": msg_id, "reason": f"get_message_fail:{e}"})
+            record_nonmatch({"id": msg_id, "reason": f"get_message_metadata_fail:{e}"})
+            continue
+
+        meta_payload = msg_meta.get("payload") or {}
+        meta_headers = parse_headers(meta_payload)
+        subject = meta_headers.get("subject", "")
+        from_addr = meta_headers.get("from", "")
+        internal_ts = int(msg_meta.get("internalDate", "0")) // 1000
+        received = dt.datetime.utcfromtimestamp(internal_ts).isoformat() if internal_ts else ""
+        snippet = msg_meta.get("snippet") or ""
+        sender_trusted = is_trusted_sender(from_addr)
+
+        if not should_fetch_full_message(
+            subject=subject,
+            preview=snippet,
+            sender_trusted=sender_trusted,
+            metadata_payload=meta_payload,
+            disable_prefilter=args.disable_metadata_prefilter,
+        ):
+            prefilter_skipped += 1
+            record_nonmatch(
+                {
+                    "id": msg_id,
+                    "subject": subject,
+                    "from": from_addr,
+                    "receivedDateTime": received,
+                    "reason": "prefilter_non_invoice",
+                }
+            )
+            continue
+
+        try:
+            msg = gc.get_message(msg_id)
+            full_fetch_count += 1
+        except Exception as e:
+            record_nonmatch(
+                {
+                    "id": msg_id,
+                    "subject": subject,
+                    "from": from_addr,
+                    "receivedDateTime": received,
+                    "reason": f"get_message_full_fail:{e}",
+                }
+            )
             continue
 
         payload = msg.get("payload") or {}
         headers = parse_headers(payload)
-        subject = headers.get("subject", "")
-        from_addr = headers.get("from", "")
+        subject = headers.get("subject", subject)
+        from_addr = headers.get("from", from_addr)
         internal_ts = int(msg.get("internalDate", "0")) // 1000
         received = dt.datetime.utcfromtimestamp(internal_ts).isoformat() if internal_ts else ""
         snippet = msg.get("snippet") or ""
@@ -1487,6 +1589,15 @@ def main():  # pragma: no cover - CLI orchestration
                 }
             )
 
+    scan_seconds = time.monotonic() - scan_start
+    logging.info(
+        "[GMAIL_STAGE] scanned=%d full_fetch=%d prefilter_skipped=%d duration=%ss",
+        idx,
+        full_fetch_count,
+        prefilter_skipped,
+        f"{scan_seconds:.1f}",
+    )
+
     # ----- Reports -----
     if args.download_report:
         with open(args.download_report, "w", encoding="utf-8") as f:
@@ -1523,7 +1634,17 @@ def main():  # pragma: no cover - CLI orchestration
         print(f"Saved nonmatches → {args.save_nonmatches}")
 
     print(f"Done. Saved {len(saved_rows)} invoices; Rejected {len(rejected_rows)}.")
+    return 0
+
+
+def run(argv: Optional[List[str]] = None) -> int:
+    """Programmatic entry point for callers that need an exit code."""
+    try:
+        return int(main(argv))
+    except SystemExit as exc:
+        code = exc.code
+        return int(code) if isinstance(code, int) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -147,3 +147,37 @@ def test_normalize_myinvoice_url():
         graph.normalize_myinvoice_url(messy)
         == "https://myinvoice.bezeq.co.il/?/foo&bar=1"
     )
+
+
+def test_is_retryable_reason():
+    assert graph.is_retryable_reason("attach_download_fail:timeout")
+    assert graph.is_retryable_reason("RATE_LIMIT")
+    assert not graph.is_retryable_reason("links_no_pdf")
+
+
+def test_load_cached_processed_message_ids(tmp_path):
+    report = tmp_path / "download_report_outlook.json"
+    report.write_text(
+        """{
+  "saved": [{"id": "saved-1"}],
+  "rejected": [
+    {"id": "rej-1", "reason": "links_no_pdf"},
+    {"id": "rej-2", "reason": "body_fetch_fail:timeout"}
+  ],
+  "report": [
+    {"msg_id": "rep-1", "skip": "duplicate_hash"},
+    {"msg_id": "rep-2", "reject": "attach_download_fail:boom"}
+  ]
+}""",
+        encoding="utf-8",
+    )
+    ids = graph.load_cached_processed_message_ids(str(report))
+    assert "saved-1" in ids
+    assert "rej-1" in ids
+    assert "rep-1" in ids
+    assert "rej-2" not in ids
+    assert "rep-2" not in ids
+
+    assert (
+        graph.load_cached_processed_message_ids(str(tmp_path / "missing.json")) == set()
+    )
