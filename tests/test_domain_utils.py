@@ -98,7 +98,7 @@ def test_pdf_keyword_stats_and_confidence(monkeypatch, tmp_path):
 
     stats = domain_pdf.pdf_keyword_stats(str(pdf_path))
     assert stats["pos_hits"] >= 1
-    assert stats["neg_hits"] >= 1  # stops scanning once a negative term is seen
+    assert stats["neg_hits"] >= 1
 
     assert domain_pdf.pdf_confidence({"pos_hits": 3, "neg_hits": 1}) == pytest.approx(
         0.75
@@ -211,6 +211,42 @@ def test_pdf_keyword_stats_tracks_weak_strong_and_hebrew_neg(monkeypatch):
     assert stats["strong_hits"] >= 2
     assert stats["weak_hits"] >= 1
     assert stats["neg_hits"] >= 1
+
+
+def test_pdf_keyword_stats_scans_later_pages_for_invoice_hints(monkeypatch):
+    monkeypatch.setattr(domain_pdf, "HAVE_PYMUPDF", True)
+    monkeypatch.setattr(domain_pdf.constants, "EN_POS", [])
+    monkeypatch.setattr(domain_pdf.constants, "HEB_POS", ["חשבונית", "קבלה"])
+    monkeypatch.setattr(domain_pdf.constants, "EN_NEG", [])
+    monkeypatch.setattr(domain_pdf.constants, "HEB_NEG", [])
+    monkeypatch.setattr(domain_pdf, "STRONG_POS", set())
+    monkeypatch.setattr(domain_pdf, "WEAK_POS", {"חשבונית", "קבלה"})
+
+    class DummyPage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self, mode):
+            assert mode == "text"
+            return self._text
+
+    class DummyDoc:
+        def __iter__(self):
+            return iter(
+                [
+                    DummyPage("חשבונית קבלה חשבונית"),
+                    DummyPage("מספר חשבונית 12103972"),
+                ]
+            )
+
+    monkeypatch.setattr(
+        domain_pdf, "fitz", SimpleNamespace(open=lambda _path: DummyDoc())
+    )
+
+    stats = domain_pdf.pdf_keyword_stats("x.pdf")
+    assert stats["pos_hits"] == 3
+    assert stats["weak_hits"] == 3
+    assert stats["invoice_id_hint"] is True
 
 
 def test_pdf_confidence_pos_without_neg_is_one():

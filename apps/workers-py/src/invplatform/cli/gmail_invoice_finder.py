@@ -404,6 +404,33 @@ def sha256_file(path: str) -> Optional[str]:
     return h.hexdigest()
 
 
+def fetch_attachment_with_retry(
+    client: "GmailClient",
+    msg_id: str,
+    att_id: str,
+    attempts: int = 3,
+    delay_seconds: float = 0.5,
+) -> bytes:
+    """Retry attachment fetches to smooth over transient Gmail API empties."""
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            blob = client.get_attachment(msg_id, att_id)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts:
+                time.sleep(delay_seconds)
+                continue
+            raise
+        if blob:
+            return blob
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+    if last_exc is not None:
+        raise last_exc
+    return b""
+
+
 def load_existing_hash_index(inv_dir: str) -> Dict[str, str]:
     index: Dict[str, str] = {}
     if not os.path.isdir(inv_dir):
@@ -462,6 +489,30 @@ def build_tagged_name(name: str, msg_tag: str) -> Tuple[str, str]:
         ext = ".pdf"
     tagged = f"{stem}__{msg_tag}{ext}"
     return tagged, normalized_stem(tagged)
+
+
+def classify_unsaved_message(
+    had_attachment_candidate: bool,
+    attachment_failure_reasons: List[str],
+    attachment_skip_reasons: List[str],
+    links_found: bool,
+) -> Dict[str, object]:
+    """Summarize why a message produced no saved invoice."""
+    if had_attachment_candidate:
+        if attachment_failure_reasons:
+            return {
+                "reason": "attachment_processing_failed",
+                "attachment_reasons": attachment_failure_reasons,
+            }
+        if attachment_skip_reasons:
+            return {
+                "reason": "attachment_skipped",
+                "attachment_reasons": attachment_skip_reasons,
+            }
+        return {"reason": "attachment_no_save"}
+    if links_found:
+        return {"reason": "links_no_pdf"}
+    return {"reason": "no_attach_no_pdf_links"}
 
 
 # --------------------------- Direct PDF via requests ---------------------------
@@ -1024,7 +1075,10 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
 
         msg_tag = short_id_tag(msg_id)
         any_saved = False
-        message_rejected = False
+        had_attachment_candidate = False
+        attachment_failure_reasons: List[str] = []
+        attachment_skip_reasons: List[str] = []
+        links_found = False
 
         # ---- Attachments ----
         parts = extract_parts(payload)
@@ -1037,6 +1091,7 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                 continue
             if "pdf" not in mime and not filename.lower().endswith(".pdf"):
                 continue
+            had_attachment_candidate = True
             candidate = {
                 "msg_id": msg_id,
                 "type": "attachment",
@@ -1047,8 +1102,19 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                 "receivedDateTime": received,
             }
             try:
-                blob = gc.get_attachment(msg_id, att_id)
+                blob = fetch_attachment_with_retry(gc, msg_id, att_id)
                 if not blob:
+                    download_report.append(
+                        {
+                            "msg_id": msg_id,
+                            "type": "attachment",
+                            "name": filename,
+                            "reject": "attachment_empty",
+                        }
+                    )
+                    candidate.update({"decision": "error", "reason": "attachment_empty"})
+                    record_candidate(candidate)
+                    attachment_failure_reasons.append("attachment_empty")
                     continue
                 h = sha256_bytes(blob)
                 candidate["sha256"] = h
@@ -1071,6 +1137,7 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                         }
                     )
                     record_candidate(candidate)
+                    attachment_skip_reasons.append("duplicate_hash")
                     continue
 
                 tmp_path = os.path.join(tmp_dir, f"tmp__{msg_tag}.pdf")
@@ -1107,6 +1174,7 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                             }
                         )
                         record_candidate(candidate)
+                        attachment_skip_reasons.append("duplicate_text")
                         os.remove(tmp_path)
                         continue
                 candidate.update(
@@ -1145,6 +1213,7 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                         )
                         candidate.update({"decision": "reject", "reason": "verify_failed"})
                     record_candidate(candidate)
+                    attachment_failure_reasons.append("verify_failed")
                     continue
 
                 out_path = ensure_unique_path(inv_dir, filename or "invoice.pdf", tag=msg_tag)
@@ -1189,11 +1258,13 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                 )
                 candidate.update({"decision": "error", "reason": f"attach_download_fail:{e}"})
                 record_candidate(candidate)
+                attachment_failure_reasons.append("attach_download_fail")
 
         # ---- Links (אם לא ניצלנו מצורף) ----
         if not any_saved:
             html, plain = get_body_text(payload)
             links = links_from_message(html, plain)
+            links_found = bool(links)
             for u in links:
                 candidate = {
                     "msg_id": msg_id,
@@ -1566,26 +1637,20 @@ def main(argv: Optional[List[str]] = None) -> int:  # pragma: no cover - CLI orc
                 record_candidate(candidate)
                 continue
 
-            if not any_saved and links:
-                record_nonmatch(
-                    {
-                        "id": msg_id,
-                        "subject": subject,
-                        "from": from_addr,
-                        "receivedDateTime": received,
-                        "reason": "links_no_pdf",
-                    }
-                )
-                message_rejected = True
-
-        if not any_saved and not message_rejected:
+        if not any_saved:
+            reason_entry = classify_unsaved_message(
+                had_attachment_candidate=had_attachment_candidate,
+                attachment_failure_reasons=attachment_failure_reasons,
+                attachment_skip_reasons=attachment_skip_reasons,
+                links_found=links_found,
+            )
             record_nonmatch(
                 {
                     "id": msg_id,
                     "subject": subject,
                     "from": from_addr,
                     "receivedDateTime": received,
-                    "reason": "no_attach_no_pdf_links",
+                    **reason_entry,
                 }
             )
 

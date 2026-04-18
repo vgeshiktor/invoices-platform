@@ -197,6 +197,44 @@ def test_gmail_decode_data_url_roundtrip():
     assert GMAIL._decode_data_url("not-a-data-url") is None  # noqa: SLF001
 
 
+def test_gmail_fetch_attachment_with_retry_recovers_from_empty_blob():
+    class StubClient:
+        def __init__(self):
+            self.calls = 0
+
+        def get_attachment(self, msg_id: str, att_id: str) -> bytes:
+            self.calls += 1
+            if self.calls < 3:
+                return b""
+            return b"%PDF-1.4 stub"
+
+    client = StubClient()
+    blob = GMAIL.fetch_attachment_with_retry(
+        client, "msg-1", "att-1", attempts=3, delay_seconds=0.0
+    )
+
+    assert blob == b"%PDF-1.4 stub"
+    assert client.calls == 3
+
+
+def test_gmail_fetch_attachment_with_retry_returns_empty_after_retries():
+    class StubClient:
+        def __init__(self):
+            self.calls = 0
+
+        def get_attachment(self, msg_id: str, att_id: str) -> bytes:
+            self.calls += 1
+            return b""
+
+    client = StubClient()
+    blob = GMAIL.fetch_attachment_with_retry(
+        client, "msg-1", "att-1", attempts=3, delay_seconds=0.0
+    )
+
+    assert blob == b""
+    assert client.calls == 3
+
+
 def test_gmail_load_existing_hash_index(tmp_path):
     invoices_dir = tmp_path / "invoices"
     (invoices_dir / "_tmp").mkdir(parents=True)
@@ -273,6 +311,34 @@ def test_gmail_decide_pdf_relevance_rejects_weak_only(tmp_path):
     assert stats2.get("invoice_id_hint") is True
 
     GMAIL.pdf_keyword_stats = orig  # type: ignore[assignment]
+
+
+def test_gmail_classify_unsaved_message_prefers_attachment_failures():
+    entry = GMAIL.classify_unsaved_message(
+        had_attachment_candidate=True,
+        attachment_failure_reasons=["attachment_empty"],
+        attachment_skip_reasons=[],
+        links_found=True,
+    )
+
+    assert entry == {
+        "reason": "attachment_processing_failed",
+        "attachment_reasons": ["attachment_empty"],
+    }
+
+
+def test_gmail_classify_unsaved_message_marks_attachment_skips():
+    entry = GMAIL.classify_unsaved_message(
+        had_attachment_candidate=True,
+        attachment_failure_reasons=[],
+        attachment_skip_reasons=["duplicate_hash"],
+        links_found=False,
+    )
+
+    assert entry == {
+        "reason": "attachment_skipped",
+        "attachment_reasons": ["duplicate_hash"],
+    }
 
 
 def test_pdf_text_fingerprint_same_text_diff_bytes(tmp_path):

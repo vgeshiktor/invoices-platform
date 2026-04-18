@@ -126,12 +126,8 @@ def pdf_keyword_stats(path: str) -> Dict:
                     stats["neg_hits"] += 1
                     stats["neg_terms"].append(term)
             # Amount / invoice id hints
-            if stats["amount_hint"] is None:
-                stats["amount_hint"] = text_has_amount_hint(text)
-            if stats["invoice_id_hint"] is None:
-                stats["invoice_id_hint"] = text_has_invoice_id(text)
-            if stats["pos_hits"] >= 3 or stats["neg_hits"] >= 1:
-                break
+            stats["amount_hint"] = bool(stats["amount_hint"]) or text_has_amount_hint(text)
+            stats["invoice_id_hint"] = bool(stats["invoice_id_hint"]) or text_has_invoice_id(text)
     except Exception:
         pass
     return stats
