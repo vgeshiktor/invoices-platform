@@ -70,7 +70,7 @@ REPORT_INPUT_DIR ?= invoices_outlook
 REPORT_JSON_OUTPUT ?= reports/invoice_report.json
 REPORT_CSV_OUTPUT ?= reports/invoice_report.csv
 REPORT_SUMMARY_CSV_OUTPUT ?= reports/invoice_report.summary.csv
-REPORT_EXTRA_ARGS ?=
+REPORT_EXTRA_ARGS ?= --pdf-skip-single-vendor-subtotals
 
 run-gmail: ## הרצת Gmail invoice finder (נדרש START_DATE ו-END_DATE)
 	@test -n "$(START_DATE)" || (echo "START_DATE is required. Example: make run-gmail START_DATE=2025-06-01 END_DATE=2025-07-01"; exit 1)
