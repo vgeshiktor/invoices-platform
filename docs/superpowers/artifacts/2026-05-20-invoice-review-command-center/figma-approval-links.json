@@ -1,0 +1,28 @@
+{
+  "fileKey": "ORTJPMYSjhBp8TZGZktrWf",
+  "fileUrl": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf",
+  "pageId": "6:2",
+  "pageName": "Approval Frames",
+  "frames": {
+    "desktopToday": {
+      "nodeId": "6:45",
+      "url": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-45",
+      "label": "Desktop - Today"
+    },
+    "desktopThisMonth": {
+      "nodeId": "6:303",
+      "url": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-303",
+      "label": "Desktop - This Month"
+    },
+    "mobileToday": {
+      "nodeId": "6:439",
+      "url": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-439",
+      "label": "Mobile - Today"
+    },
+    "mobileDetail": {
+      "nodeId": "6:521",
+      "url": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-521",
+      "label": "Mobile - Invoice Detail"
+    }
+  }
+}
