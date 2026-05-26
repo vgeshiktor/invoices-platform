@@ -1,0 +1,311 @@
+{
+  "capturedAt": "2026-05-26",
+  "figma": {
+    "fileKey": "ORTJPMYSjhBp8TZGZktrWf",
+    "fileUrl": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf",
+    "nodeId": "6:45",
+    "nodeUrl": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-45",
+    "pageName": "Approval Frames"
+  },
+  "frame": {
+    "name": "Desktop - Today",
+    "width": 1440,
+    "height": 1080
+  },
+  "sections": [
+    {
+      "id": "37:9",
+      "name": "Saved views",
+      "x": 1258,
+      "y": 0,
+      "width": 118,
+      "height": 42
+    },
+    {
+      "id": "37:42",
+      "name": "Exposure",
+      "x": 1044,
+      "y": 0,
+      "width": 328,
+      "height": 124
+    },
+    {
+      "id": "37:49",
+      "name": "Queue panel",
+      "x": 32,
+      "y": 328,
+      "width": 752,
+      "height": 736
+    },
+    {
+      "id": "37:97",
+      "name": "Detail panel",
+      "x": 808,
+      "y": 328,
+      "width": 600,
+      "height": 749
+    },
+    {
+      "id": "37:108",
+      "name": "Decision card",
+      "x": 24,
+      "y": 172,
+      "width": 552,
+      "height": 188
+    },
+    {
+      "id": "37:123",
+      "name": "Facts card",
+      "x": 24,
+      "y": 451,
+      "width": 268,
+      "height": 298
+    },
+    {
+      "id": "37:139",
+      "name": "Evidence card",
+      "x": 308,
+      "y": 451,
+      "width": 268,
+      "height": 298
+    }
+  ],
+  "stats": [
+    {
+      "id": "37:21",
+      "name": "Needs review",
+      "x": 0,
+      "y": 0,
+      "width": 328,
+      "height": 124,
+      "texts": [
+        "Needs review",
+        "2",
+        "2 invoices are blocked by missing or uncertain fields.",
+        "Open queue"
+      ]
+    },
+    {
+      "id": "37:28",
+      "name": "Duplicate risk",
+      "x": 348,
+      "y": 0,
+      "width": 328,
+      "height": 124,
+      "texts": [
+        "Duplicate risk",
+        "1",
+        "Resolve the duplicate pair before any payment moves.",
+        "Resolve risk"
+      ]
+    },
+    {
+      "id": "37:35",
+      "name": "Overdue",
+      "x": 696,
+      "y": 0,
+      "width": 328,
+      "height": 124,
+      "texts": [
+        "Overdue",
+        "1",
+        "Payment follow-up is needed on one invoice due today.",
+        "Follow up"
+      ]
+    },
+    {
+      "id": "37:42",
+      "name": "Exposure",
+      "x": 1044,
+      "y": 0,
+      "width": 328,
+      "height": 124,
+      "texts": [
+        "At-risk amount",
+        "₪1,302",
+        "Today-only invoices waiting for action.",
+        "Today only"
+      ]
+    }
+  ],
+  "detailPanel": {
+    "id": "37:97",
+    "x": 808,
+    "y": 328,
+    "width": 600,
+    "height": 749
+  },
+  "facts": {
+    "id": "37:123",
+    "width": 268,
+    "height": 298,
+    "rowGap": 14,
+    "requiredBadge": {
+      "width": 63,
+      "height": 22
+    },
+    "anomalyBadge": {
+      "width": 106,
+      "height": 22
+    }
+  },
+  "evidence": {
+    "id": "37:139",
+    "width": 268,
+    "height": 298
+  },
+  "keyTexts": [
+    {
+      "id": "37:3",
+      "text": "Invoice Review Command Center",
+      "x": 0,
+      "y": 0,
+      "width": 452,
+      "height": 34
+    },
+    {
+      "id": "37:13",
+      "text": "Today",
+      "x": 24,
+      "y": 10,
+      "width": 39,
+      "height": 16
+    },
+    {
+      "id": "37:15",
+      "text": "Yesterday",
+      "x": 20,
+      "y": 10,
+      "width": 63,
+      "height": 16
+    },
+    {
+      "id": "37:17",
+      "text": "This Week",
+      "x": 19,
+      "y": 10,
+      "width": 66,
+      "height": 16
+    },
+    {
+      "id": "37:19",
+      "text": "This Month",
+      "x": 21,
+      "y": 10,
+      "width": 71,
+      "height": 16
+    },
+    {
+      "id": "37:44",
+      "text": "At-risk amount",
+      "x": 22,
+      "y": 20,
+      "width": 160,
+      "height": 15
+    },
+    {
+      "id": "37:46",
+      "text": "Today-only invoices waiting for action.",
+      "x": 22,
+      "y": 76,
+      "width": 212,
+      "height": 36
+    },
+    {
+      "id": "37:63",
+      "text": "Missing category · VAT anomaly",
+      "x": 24,
+      "y": 80,
+      "width": 430,
+      "height": 20
+    },
+    {
+      "id": "37:110",
+      "text": "Assign category before approval",
+      "x": 0,
+      "y": 21,
+      "width": 332,
+      "height": 60
+    },
+    {
+      "id": "37:117",
+      "text": "Change category",
+      "x": 36,
+      "y": 15,
+      "width": 109,
+      "height": 16
+    },
+    {
+      "id": "37:119",
+      "text": "Mark reviewed",
+      "x": 36,
+      "y": 14,
+      "width": 93,
+      "height": 16
+    },
+    {
+      "id": "37:121",
+      "text": "Open source thread",
+      "x": 30,
+      "y": 15,
+      "width": 125,
+      "height": 16
+    },
+    {
+      "id": "37:124",
+      "text": "Facts",
+      "x": 20,
+      "y": 20,
+      "width": 39,
+      "height": 15
+    },
+    {
+      "id": "37:131",
+      "text": "Not assigned",
+      "x": 0,
+      "y": 18,
+      "width": 106,
+      "height": 18
+    },
+    {
+      "id": "113:3",
+      "text": "Required",
+      "x": 8,
+      "y": 4,
+      "width": 47,
+      "height": 14
+    },
+    {
+      "id": "113:5",
+      "text": "Exceeds subtotal",
+      "x": 8,
+      "y": 4,
+      "width": 90,
+      "height": 14
+    },
+    {
+      "id": "37:140",
+      "text": "Evidence and trust",
+      "x": 20,
+      "y": 20,
+      "width": 133,
+      "height": 15
+    },
+    {
+      "id": "37:141",
+      "text": "Source snapshot",
+      "x": 0,
+      "y": 0,
+      "width": 228,
+      "height": 20
+    },
+    {
+      "id": "37:149",
+      "text": "Trust layer",
+      "x": 0,
+      "y": 0,
+      "width": 84,
+      "height": 20
+    }
+  ]
+}

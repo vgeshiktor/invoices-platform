@@ -1,0 +1,237 @@
+{
+  "repository": "vgeshiktor/invoices-platform",
+  "milestone": {
+    "title": "Invoice Review Command Center Prototype",
+    "description": "High-fidelity UX/UI prototype for an operator-grade invoice review workspace spanning Today, Yesterday, This Week, and This Month with desktop split view, mobile detail flow, and exception-first triage.",
+    "state": "open"
+  },
+  "umbrellaEpic": {
+    "title": "Umbrella: Invoice Review Experience",
+    "labels": [
+      "frontend",
+      "priority:P0",
+      "type:feature"
+    ],
+    "body": "## Objective\nCreate a coherent invoice review experience for finance operators with an exception-first list and a metadata-first drill-down across desktop and mobile.\n\n## Success criteria\n- High-fidelity desktop and mobile approval frames exist\n- All four presets are represented in one responsive workspace\n- Exception-first triage is explicit in list and detail\n- Responsive review is complete\n- Any unresolved UX debt is converted into explicit follow-up issues\n\n## Child epics\n- E9: Invoice Review Information Architecture + Visual System\n- E10: Exception-First Invoice List Experience\n- E11: Invoice Drill-Down and Review Actions\n- E12: Responsive Quality, Review, and Approval Pack"
+  },
+  "epics": [
+    {
+      "code": "E9",
+      "title": "E9: Invoice Review Information Architecture + Visual System",
+      "labels": [
+        "frontend",
+        "priority:P0",
+        "type:feature"
+      ],
+      "body": "Lock the operator workflow, shared shell, visual system, and approval-quality frame set for the invoice review prototype."
+    },
+    {
+      "code": "E10",
+      "title": "E10: Exception-First Invoice List Experience",
+      "labels": [
+        "frontend",
+        "priority:P0",
+        "type:feature"
+      ],
+      "body": "Design the list, range presets, summary band, filters, and system states so operators can scan and prioritize exceptions quickly."
+    },
+    {
+      "code": "E11",
+      "title": "E11: Invoice Drill-Down and Review Actions",
+      "labels": [
+        "frontend",
+        "priority:P0",
+        "type:feature"
+      ],
+      "body": "Define the selected-invoice experience on desktop and mobile with metadata-first hierarchy, risk interpretation, and review actions."
+    },
+    {
+      "code": "E12",
+      "title": "E12: Responsive Quality, Review, and Approval Pack",
+      "labels": [
+        "frontend",
+        "priority:P0",
+        "type:feature"
+      ],
+      "body": "Harden the prototype through responsive review, accessibility/readability checks, screenshot export, and explicit deferral of non-critical UX debt."
+    }
+  ],
+  "issues": [
+    {
+      "title": "[FE-801] Define operator task model and invoice review information architecture",
+      "epic": "E9",
+      "labels": [
+        "epic:E9",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Define the operator workflow for reviewing invoices across Today, Yesterday, This Week, and This Month.\n\nAcceptance criteria:\n- Shared workspace model is explicit\n- Exception-first order is documented\n- Desktop and mobile information architecture are aligned\n- List/detail responsibilities are clearly separated"
+    },
+    {
+      "title": "[FE-802] Create desktop high-fidelity command-center frames for Today and This Month",
+      "epic": "E9",
+      "labels": [
+        "epic:E9",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Create approval-quality desktop frames for the Today and This Month presets.\n\nAcceptance criteria:\n- Shared shell is consistent across both frames\n- Today emphasizes triage\n- This Month shows broader analytical context\n- Selected row and detail panel are visually stable"
+    },
+    {
+      "title": "[FE-803] Create mobile high-fidelity frames for Today list and invoice detail",
+      "epic": "E9",
+      "labels": [
+        "epic:E9",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Create approval-quality mobile frames for the Today list and the full-screen invoice detail state.\n\nAcceptance criteria:\n- Preset chips remain usable on mobile\n- Cards replace the desktop table\n- Metadata-first detail hierarchy is preserved\n- Sticky back and action behavior is visible"
+    },
+    {
+      "title": "[FE-804] Build realistic invoice fixture set covering confidence, duplicate, overdue, municipal, and uncategorized states",
+      "epic": "E9",
+      "labels": [
+        "epic:E9",
+        "frontend",
+        "priority:P2",
+        "type:feature"
+      ],
+      "body": "Create a deterministic prototype fixture set derived from the repo invoice domain.\n\nAcceptance criteria:\n- Includes normal, low-confidence, duplicate, overdue, quarantined, uncategorized, municipal, and mixed-source states\n- Supports all four presets\n- Supports both list and detail views"
+    },
+    {
+      "title": "[FE-901] Design invoice row/card system for dense desktop and mobile scanning",
+      "epic": "E10",
+      "labels": [
+        "epic:E10",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design the row and card system so operators can scan vendor, amount, dates, source, and exception states quickly."
+    },
+    {
+      "title": "[FE-902] Design range presets, summary band, and default sort behavior",
+      "epic": "E10",
+      "labels": [
+        "epic:E10",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design the four time presets, compact summary band, and exception-first default ordering behavior."
+    },
+    {
+      "title": "[FE-903] Design filter drawer, saved filter shortcuts, and active filter chips",
+      "epic": "E10",
+      "labels": [
+        "epic:E10",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design a shallow, operator-fast filtering model with saved shortcuts and active filter visibility."
+    },
+    {
+      "title": "[FE-904] Design empty, no-results, loading, and failure states for the list workspace",
+      "epic": "E10",
+      "labels": [
+        "epic:E10",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design the workspace states that keep the experience useful when data is missing, filtered out, loading, or failed."
+    },
+    {
+      "title": "[FE-1001] Design desktop split-view drill-down hierarchy and metadata grouping",
+      "epic": "E11",
+      "labels": [
+        "epic:E11",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design the desktop detail panel hierarchy so structured facts, trust signals, and grouped metadata dominate over the document preview."
+    },
+    {
+      "title": "[FE-1002] Design invoice action model: review, duplicate flag, note, category change, source open",
+      "epic": "E11",
+      "labels": [
+        "epic:E11",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design the action model for operator workflows directly from the detail pane."
+    },
+    {
+      "title": "[FE-1003] Design mobile full-screen invoice detail flow with sticky facts/actions",
+      "epic": "E11",
+      "labels": [
+        "epic:E11",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Design the mobile drill-down so the metadata-first review model survives the smaller viewport."
+    },
+    {
+      "title": "[FE-1004] Validate drill-down behavior for low-confidence, duplicate, overdue, and quarantined invoices",
+      "epic": "E11",
+      "labels": [
+        "epic:E11",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Validate that high-risk invoice states change the detail view hierarchy and messaging in useful ways."
+    },
+    {
+      "title": "[FE-1101] Run responsive review across desktop, tablet, and mobile breakpoints",
+      "epic": "E12",
+      "labels": [
+        "epic:E12",
+        "frontend",
+        "priority:P1",
+        "type:quality"
+      ],
+      "body": "Review the prototype at desktop, tablet, and mobile sizes and fix layout issues that compromise readability or workflow."
+    },
+    {
+      "title": "[FE-1102] Run accessibility and readability pass for dense financial UI",
+      "epic": "E12",
+      "labels": [
+        "epic:E12",
+        "frontend",
+        "priority:P1",
+        "type:quality"
+      ],
+      "body": "Review contrast, type sizing, chip readability, spacing, and dense-data clarity across the prototype."
+    },
+    {
+      "title": "[FE-1103] Export stakeholder approval screenshot pack from the prototype",
+      "epic": "E12",
+      "labels": [
+        "epic:E12",
+        "frontend",
+        "priority:P1",
+        "type:feature"
+      ],
+      "body": "Export the four primary approval frames into a clean stakeholder screenshot pack."
+    },
+    {
+      "title": "[FE-1104] Fix critical UX defects or create laser-focused follow-up issues for approved deferrals",
+      "epic": "E12",
+      "labels": [
+        "epic:E12",
+        "frontend",
+        "priority:P1",
+        "type:chore"
+      ],
+      "body": "Resolve critical UX defects before sign-off and explicitly create follow-up issues for non-critical approved deferrals."
+    }
+  ]
+}

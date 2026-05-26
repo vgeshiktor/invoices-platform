@@ -1,0 +1,53 @@
+{
+  "repository": "vgeshiktor/invoices-platform",
+  "milestone": {
+    "number": 11,
+    "title": "Invoice Review Command Center Prototype",
+    "url": "https://github.com/vgeshiktor/invoices-platform/milestone/11"
+  },
+  "umbrellaEpic": {
+    "number": 46,
+    "title": "Umbrella: Invoice Review Experience",
+    "url": "https://github.com/vgeshiktor/invoices-platform/issues/46"
+  },
+  "epics": {
+    "E9": {
+      "number": 47,
+      "title": "E9: Invoice Review Information Architecture + Visual System",
+      "url": "https://github.com/vgeshiktor/invoices-platform/issues/47"
+    },
+    "E10": {
+      "number": 48,
+      "title": "E10: Exception-First Invoice List Experience",
+      "url": "https://github.com/vgeshiktor/invoices-platform/issues/48"
+    },
+    "E11": {
+      "number": 49,
+      "title": "E11: Invoice Drill-Down and Review Actions",
+      "url": "https://github.com/vgeshiktor/invoices-platform/issues/49"
+    },
+    "E12": {
+      "number": 50,
+      "title": "E12: Responsive Quality, Review, and Approval Pack",
+      "url": "https://github.com/vgeshiktor/invoices-platform/issues/50"
+    }
+  },
+  "issues": {
+    "FE-801": 51,
+    "FE-802": 52,
+    "FE-803": 53,
+    "FE-804": 54,
+    "FE-901": 55,
+    "FE-902": 56,
+    "FE-903": 57,
+    "FE-904": 58,
+    "FE-1001": 59,
+    "FE-1002": 60,
+    "FE-1003": 61,
+    "FE-1004": 62,
+    "FE-1101": 63,
+    "FE-1102": 64,
+    "FE-1103": 65,
+    "FE-1104": 66
+  }
+}
