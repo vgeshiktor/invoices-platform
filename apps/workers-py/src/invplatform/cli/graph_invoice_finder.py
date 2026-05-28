@@ -537,6 +537,53 @@ def normalize_myinvoice_url(u: str) -> str:
     return s
 
 
+def collect_accessibility_button_names(snapshot: Optional[Dict]) -> List[str]:
+    names: List[str] = []
+
+    def walk(node: Optional[Dict]):
+        if not isinstance(node, dict):
+            return
+        if node.get("role") == "button":
+            name = " ".join(str(node.get("name") or "").split())
+            if name:
+                names.append(name)
+        for child in node.get("children") or []:
+            walk(child)
+
+    walk(snapshot)
+    return names
+
+
+def choose_bezeq_invoice_button_name(button_names: List[str]) -> Optional[str]:
+    ranked: List[Tuple[int, int, str]] = []
+
+    for raw_name in button_names:
+        name = " ".join((raw_name or "").split())
+        if not name or "חשבונ" not in name:
+            continue
+        if "שאלה:" in name or "סימולטור" in name:
+            continue
+
+        score = 0
+        if "נאמן למקור" in name:
+            score += 5
+        if "לחודש" in name or "לתקופת" in name:
+            score += 4
+        if "לחץ לפתיחת" in name:
+            score += 3
+        if "קישור" in name:
+            score += 2
+        if "כפתור תמיכה" in name:
+            score += 1
+        ranked.append((score, len(name), name))
+
+    if not ranked:
+        return None
+    ranked.sort(reverse=True)
+    best_score, _, best_name = ranked[0]
+    return best_name if best_score > 0 else None
+
+
 def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
     url: str,
     out_dir: str,
@@ -573,6 +620,126 @@ def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
                 context.tracing.start(screenshots=True, snapshots=True, sources=False)
 
             api_urls: List[str] = []
+            pdf_blobs: List[Tuple[str, bytes]] = []
+
+            def filename_from_headers(url_value: str, headers: Dict[str, str], default: str) -> str:
+                name = default
+                cd = headers.get("content-disposition") or ""
+                m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd, flags=re.I)
+                if m:
+                    name = sanitize_filename(m.group(1))
+                else:
+                    tail = urlparse(url_value).path.rsplit("/", 1)[-1] or default
+                    if tail.lower().endswith(".pdf"):
+                        name = sanitize_filename(tail)
+                if not name.lower().endswith(".pdf"):
+                    name += ".pdf"
+                return name
+
+            def capture_pdf_response(resp) -> None:
+                try:
+                    resp_url = resp.url or ""
+                    headers = dict(resp.headers)
+                    ct = (headers.get("content-type") or "").lower()
+                    if (
+                        "application/pdf" not in ct
+                        and "getinvoicefilefrombmailer" not in resp_url.lower()
+                    ):
+                        return
+                    body = resp.body()
+                    if body[:4] != b"%PDF":
+                        return
+                    name = filename_from_headers(resp_url, headers, "bezeq_invoice.pdf")
+                    pdf_blobs.append((name, body))
+                    note(f"pdf_response_captured:{resp_url}")
+                except Exception as e:
+                    note(f"pdf_capture_err:{e}")
+
+            def materialize_download(dl) -> Optional[Tuple[str, bytes]]:
+                tmp_name = f"._tmp_bezeq_dl_{now_stamp()}.pdf"
+                tmp_path = os.path.join(out_dir, tmp_name)
+                try:
+                    dl.save_as(tmp_path)
+                    with open(tmp_path, "rb") as f:
+                        blob = f.read()
+                    if blob[:4] != b"%PDF":
+                        note("download_not_pdf")
+                        return None
+                    name = sanitize_filename(
+                        getattr(dl, "suggested_filename", None) or "bezeq_invoice.pdf"
+                    )
+                    if not name.lower().endswith(".pdf"):
+                        name += ".pdf"
+                    return name, blob
+                finally:
+                    try:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+                    except Exception:
+                        pass
+
+            def consume_last_pdf_blob() -> bool:
+                if not pdf_blobs:
+                    return False
+                res["ok"] = True
+                res["path"] = pdf_blobs[-1]
+                return True
+
+            def enable_accessibility(page) -> bool:
+                locator = page.get_by_role("button", name="Enable accessibility")
+                if locator.count() == 0:
+                    return False
+                try:
+                    locator.focus()
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(1200)
+                    note("accessibility_enabled_keyboard")
+                    return True
+                except Exception as e:
+                    note(f"accessibility_enable_keyboard_fail:{e}")
+                try:
+                    locator.first.click(force=True, timeout=2000)
+                    page.wait_for_timeout(1200)
+                    note("accessibility_enabled_click")
+                    return True
+                except Exception as e:
+                    note(f"accessibility_enable_click_fail:{e}")
+                return False
+
+            def try_accessible_invoice_button(page) -> bool:
+                if not enable_accessibility(page):
+                    return False
+                try:
+                    snapshot = page.accessibility.snapshot(interesting_only=False)
+                except Exception as e:
+                    note(f"accessibility_snapshot_fail:{e}")
+                    return False
+                chosen_name = choose_bezeq_invoice_button_name(
+                    collect_accessibility_button_names(snapshot)
+                )
+                if not chosen_name:
+                    note("no_accessible_invoice_button")
+                    return False
+                note(f"accessible_invoice_button:{chosen_name}")
+                locator = page.get_by_role("button", name=chosen_name).first
+                try:
+                    with page.expect_download(timeout=15000) as dl_info:
+                        locator.click(timeout=5000)
+                    materialized = materialize_download(dl_info.value)
+                    if materialized:
+                        res["ok"] = True
+                        res["path"] = materialized
+                        note("accessible_invoice_download")
+                        return True
+                except Exception as e:
+                    note(f"accessible_expect_download_fail:{e}")
+
+                try:
+                    locator.click(timeout=5000)
+                    page.wait_for_timeout(5000)
+                except Exception as e:
+                    note(f"accessible_click_fail:{e}")
+                return consume_last_pdf_blob()
 
             def on_console(m):
                 try:
@@ -605,6 +772,7 @@ def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
                 try:
                     if "GetAttachedInvoiceById" in (resp.url or ""):
                         api_urls.append(resp.url)
+                    capture_pdf_response(resp)
                 except Exception:
                     pass
 
@@ -652,6 +820,8 @@ def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
                     res["ok"] = True
                     res["path"] = (name, blob)
                     break
+            if not res["ok"] and consume_last_pdf_blob():
+                note("pdf_response_after_bootstrap")
 
             # טריגר עדין (למקרה שלא נתפס מייד)
             if not res["ok"]:
@@ -679,6 +849,20 @@ def bezeq_fetch_with_api_sniff(  # pragma: no cover - Playwright/network-heavy
                         res["ok"] = True
                         res["path"] = (name, blob)
                         break
+            if not res["ok"] and consume_last_pdf_blob():
+                note("pdf_response_after_text_click")
+
+            if not res["ok"]:
+                try_accessible_invoice_button(page)
+
+            if not res["ok"] and take_screens:
+                try:
+                    page.screenshot(
+                        path=os.path.join(out_dir, f"bezeq_screen_no_pdf_{now_stamp()}.png"),
+                        full_page=True,
+                    )
+                except Exception as e:
+                    note(f"screenshot_fail:{e}")
 
             if keep_trace:
                 try:
