@@ -15,7 +15,7 @@ This design defines a high-fidelity invoice review prototype for an operator-gra
 
 The workspace is exception-first. It helps an operator quickly identify which invoices need attention, understand why, and drill into the selected invoice without losing list context on desktop.
 
-The source invoice domain comes from the existing `InvoiceRecord` shape in [apps/workers-py/src/invplatform/cli/invoices_report.py](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/apps/workers-py/src/invplatform/cli/invoices_report.py:103).
+The source invoice domain comes from the existing `InvoiceRecord` shape in [apps/workers-py/src/invplatform/cli/invoices_report.py](../../../apps/workers-py/src/invplatform/cli/invoices_report.py#L103).
 
 ## Goals
 
@@ -27,7 +27,7 @@ The source invoice domain comes from the existing `InvoiceRecord` shape in [apps
 
 ## Journey-First Framing
 
-This spec follows the repo UX review method in [docs/UX_REVIEW_METHOD.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/UX_REVIEW_METHOD.md:1).
+This spec follows the repo UX review method in [docs/UX_REVIEW_METHOD.md](../../UX_REVIEW_METHOD.md).
 
 The screen layout is not evaluated in isolation. Its content and action hierarchy are only valid relative to:
 

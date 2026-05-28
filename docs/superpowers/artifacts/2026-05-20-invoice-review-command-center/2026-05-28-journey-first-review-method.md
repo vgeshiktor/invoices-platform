@@ -19,9 +19,9 @@ It also raised a more detailed visual caution:
 This feedback is now anchored in the repository in two places:
 
 1. Repo-wide method
-   [docs/UX_REVIEW_METHOD.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/UX_REVIEW_METHOD.md:1) defines the standard that UX review in this repo is journey-first, not screen-first.
+   [docs/UX_REVIEW_METHOD.md](../../../UX_REVIEW_METHOD.md) defines the standard that UX review in this repo is journey-first, not screen-first.
 2. Feature-level application
-   [2026-05-20-invoice-review-command-center-design.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/specs/2026-05-20-invoice-review-command-center-design.md:1) now documents the operator goal, journey stage, CTA hierarchy, and selected-state differentiation rules for the invoice review workspace.
+   [2026-05-20-invoice-review-command-center-design.md](../../specs/2026-05-20-invoice-review-command-center-design.md) now documents the operator goal, journey stage, CTA hierarchy, and selected-state differentiation rules for the invoice review workspace.
 
 ## Product interpretation for this prototype
 
