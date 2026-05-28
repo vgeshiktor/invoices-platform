@@ -149,6 +149,45 @@ def test_normalize_myinvoice_url():
     )
 
 
+def test_collect_accessibility_button_names_and_choose_bezeq_invoice():
+    snapshot = {
+        "role": "WebArea",
+        "children": [
+            {
+                "role": "button",
+                "name": "פריט ניווט: חשבוניות נבחר",
+            },
+            {
+                "role": "group",
+                "children": [
+                    {
+                        "role": "button",
+                        "name": "כפתור תמיכה: סימולטור חשבוניות > לחץ לפתיחת קישור תמיכה",
+                    },
+                    {
+                        "role": "button",
+                        "name": "כפתור תמיכה: חשבונית נאמן למקור לחודש מרץ 2026 > לחץ לפתיחת קישור תמיכה",
+                    },
+                    {
+                        "role": "button",
+                        "name": "שאלה: איך אפשר לשלם את החשבונית?",
+                    },
+                ],
+            },
+        ],
+    }
+
+    names = graph.collect_accessibility_button_names(snapshot)
+    assert (
+        "כפתור תמיכה: חשבונית נאמן למקור לחודש מרץ 2026 > לחץ לפתיחת קישור תמיכה"
+        in names
+    )
+    assert (
+        graph.choose_bezeq_invoice_button_name(names)
+        == "כפתור תמיכה: חשבונית נאמן למקור לחודש מרץ 2026 > לחץ לפתיחת קישור תמיכה"
+    )
+
+
 def test_is_retryable_reason():
     assert graph.is_retryable_reason("attach_download_fail:timeout")
     assert graph.is_retryable_reason("RATE_LIMIT")
