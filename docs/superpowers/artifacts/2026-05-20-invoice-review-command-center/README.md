@@ -5,10 +5,12 @@ This directory is the repo-backed source package for the invoice review prototyp
 ## Contents
 
 - Design spec: [2026-05-20-invoice-review-command-center-design.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/specs/2026-05-20-invoice-review-command-center-design.md:1)
+- Repo UX review method: [UX_REVIEW_METHOD.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/UX_REVIEW_METHOD.md:1)
 - Implementation plan: [2026-05-20-invoice-review-command-center-prototype.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/plans/2026-05-20-invoice-review-command-center-prototype.md:1)
 - Fixtures: [invoice-fixtures.json](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/invoice-fixtures.json:1)
 - Tracker manifest: [github-tracker-manifest.json](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/github-tracker-manifest.json:1)
 - Figma review links: [figma-approval-links.json](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/figma-approval-links.json:1)
+- Journey-first review method adoption: [2026-05-28-journey-first-review-method.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/2026-05-28-journey-first-review-method.md:1)
 - Mobile detail review resolution: [2026-05-24-mobile-detail-review-resolution.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/2026-05-24-mobile-detail-review-resolution.md:1)
 - Structural rebuild review resolution: [2026-05-25-command-center-structural-rebuild.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/2026-05-25-command-center-structural-rebuild.md:1)
 - Mobile-first review resolution: [2026-05-25-mobile-first-review-resolution.md](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/docs/superpowers/artifacts/2026-05-20-invoice-review-command-center/2026-05-25-mobile-first-review-resolution.md:1)
@@ -43,6 +45,7 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Review note: a focused 2026-05-26 desktop pass adjusted only the selected-invoice action row spacing and disabled-state polish while preserving the button design.
 - Review note: a second focused 2026-05-26 desktop pass corrected only the selected-invoice lower-card containment for `Facts` and `Evidence and trust`.
 - Review note: a third focused 2026-05-26 desktop pass removed the remaining `Facts`-card regression and tightened supporting desktop signals for a more production-ready finish.
+- Review note: a 2026-05-28 documentation pass anchored the stakeholder feedback into a repo-wide journey-first UX review method and tightened the command-center spec around CTA hierarchy and selected-state differentiation.
 - Reproducibility note: `Desktop - Today` now has a repo-backed structural snapshot and recreate guide, but a durable PNG export is still recommended for a fully locked visual reference.
 
 ## GitHub Tracker
