@@ -15,7 +15,7 @@ This design defines a high-fidelity invoice review prototype for an operator-gra
 
 The workspace is exception-first. It helps an operator quickly identify which invoices need attention, understand why, and drill into the selected invoice without losing list context on desktop.
 
-The source invoice domain comes from the existing `InvoiceRecord` shape in [apps/workers-py/src/invplatform/cli/invoices_report.py](/Users/vadimgeshiktor/repos/github.com/vgeshiktor/python-projects/invoices-platform/apps/workers-py/src/invplatform/cli/invoices_report.py:103).
+The source invoice domain comes from the existing `InvoiceRecord` shape in [apps/workers-py/src/invplatform/cli/invoices_report.py](../../../apps/workers-py/src/invplatform/cli/invoices_report.py#L103).
 
 ## Goals
 
@@ -24,6 +24,54 @@ The source invoice domain comes from the existing `InvoiceRecord` shape in [apps
 - Surface exceptions before routine items.
 - Reflect existing invoice metadata, trust signals, and parsing outcomes already present in the repo.
 - Produce an approval package suitable for stakeholder review before browser-based validation or frontend implementation.
+
+## Journey-First Framing
+
+This spec follows the repo UX review method in [docs/UX_REVIEW_METHOD.md](../../UX_REVIEW_METHOD.md).
+
+The screen layout is not evaluated in isolation. Its content and action hierarchy are only valid relative to:
+
+- the finance operator's goal
+- the operator's step in the review journey
+- the set of actions the product currently allows or blocks
+
+Any future review of this workspace must distinguish between:
+
+- visual craft feedback about clarity, spacing, contrast, and emphasis
+- product UX feedback about whether the screen helps the operator complete the correct task
+
+## Operator Goal And Journey
+
+### Primary user goal
+
+The finance operator's goal is to move an invoice review queue forward safely and quickly by answering three questions in order:
+
+1. Why is this invoice here?
+2. What is missing, risky, or suspicious?
+3. What is the next correct action?
+
+### Journey stage
+
+The command center sits in the middle of an operator workflow:
+
+1. Enter the active time range and scan the queue.
+2. Select the next invoice that needs attention.
+3. Understand the review reason without opening a raw record first.
+4. Resolve the blocking issue or confirm the risk.
+5. Mark the invoice reviewed only when the blocking issue is cleared.
+6. Move to the next item without losing queue context.
+
+### Screen responsibilities
+
+The list exists to support queue prioritization.
+
+The detail pane exists to support operator decision-making, not to mirror a raw invoice record.
+
+Every primary state must answer all of the following without extra hunting:
+
+- why this invoice surfaced
+- what the operator needs to judge
+- what the next valid action is
 
 ## Product Shape
 
@@ -81,6 +129,10 @@ Four compact summary cards:
 
 The summary band is intentionally compact and informational. It should not visually compete with the list.
 
+### Decision hierarchy
+
+The summary band, chips, and nearby pills are supporting controls. They must not visually compete with the action that moves the current invoice forward.
+
 ### List content
 
 Each desktop row and mobile card must show:
@@ -135,6 +187,16 @@ The prototype should visibly support:
 - Open source message/thread
 - Export/share
 
+### CTA hierarchy
+
+Each selected-invoice state must expose one unmistakable primary CTA.
+
+- If review can be completed immediately, the completion action should be the most visually salient action in its group.
+- If review is blocked, the unblock action becomes the primary CTA and the completion action must remain visible but clearly disabled or secondary.
+- Small supporting controls, including chips or pills adjacent to the selected item, must not compete with the primary CTA.
+
+For the current command-center logic, a blocking resolution action such as `Reclassify category` can be primary when categorization is required, while `Mark reviewed` remains visible but unavailable until the blocker is cleared.
+
 ## Visual System
 
 ### Tone
@@ -169,6 +231,14 @@ Color must communicate meaning, not decoration.
 - Compact semantic chips
 - Amounts aligned for scan speed
 - Detail pane grouped into concise, readable fact clusters
+
+### Selected-state differentiation
+
+The highlighted or selected top card must preserve a legible boundary relative to sibling cards.
+
+- If non-selected cards use a contour, the selected card should also preserve a clear edge even when it uses a stronger fill color.
+- The design should not ask users to decode whether the difference is caused by color, shape, or component type.
+- Use one dominant emphasis signal first, then supporting signals such as stronger typography or elevation.
 
 ## Responsive Approval Frames
 
@@ -244,10 +314,15 @@ The fixture set must include:
 
 ## Design QA Checklist
 
+- User, goal, journey stage, and available capabilities are documented before product-level screen critique
 - All four presets exist inside one workspace model
 - Exception-first behavior is visible in list ordering and chip design
 - Desktop uses split view
 - Mobile uses list-to-detail
+- Every reviewed state makes the review reason explicit
+- Exactly one primary CTA is visually dominant for each decision state
+- If review is blocked, the unblock action is primary and the completion action is visibly unavailable
+- Selected or highlighted cards preserve boundary clarity relative to sibling cards
 - Structured facts and actions dominate the detail view
 - Document preview is present but secondary
 - Dense information remains readable at desktop and mobile sizes

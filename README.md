@@ -21,6 +21,7 @@ Monorepo for invoice discovery, PDF collection, and invoice reporting across Gma
 
 - `README.md` (this file): project overview + quick start + workflow map.
 - `docs/USAGE.md`: full command reference and how-to usage for all current functionality.
+- `docs/UX_REVIEW_METHOD.md`: journey-first UX review standard for product screens, prototypes, and design feedback.
 - `docs/META_BILLING_GRAPH_API_EXPLORER.md`: ready-to-paste Graph API Explorer URLs for Meta billing diagnostics.
 - `integrations/openapi/invoices.yaml`: API contract draft (broader than currently implemented Go handlers).
 
@@ -31,6 +32,7 @@ The docs structure in this repo follows these principles:
 - Quick orientation in `README.md`, detailed how-to/reference in `docs/USAGE.md`.
 - Task-first command examples (copy/paste ready).
 - Explicitly separate current behavior from future/planned API scope.
+- For UI-heavy work, define the user journey and primary decision before critiquing screen content or hierarchy.
 
 References used for this structure:
 
