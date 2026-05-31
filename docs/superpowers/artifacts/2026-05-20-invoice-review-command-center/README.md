@@ -20,6 +20,8 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Decision actions button polish: [2026-05-26-decision-actions-button-polish.md](./2026-05-26-decision-actions-button-polish.md)
 - Lower cards containment fix: [2026-05-26-lower-cards-containment-fix.md](./2026-05-26-lower-cards-containment-fix.md)
 - Desktop quality pass: Facts and supporting signals: [2026-05-26-desktop-quality-pass-facts-and-signals.md](./2026-05-26-desktop-quality-pass-facts-and-signals.md)
+- E12 gap audit: [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md)
+- Stakeholder approval screenshot pack: [approval-pack/README.md](./approval-pack/README.md)
 - Desktop Today reproducibility guide: [desktop-today-reproducibility.md](./desktop-today-reproducibility.md)
 - Desktop Today reproducibility snapshot: [desktop-today-reproducibility.json](./desktop-today-reproducibility.json)
 - GitHub tracker results: [github-tracker-results.json](./github-tracker-results.json)
@@ -35,7 +37,7 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Desktop This Month: [node 6:303](https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-303)
 - Mobile Today: [node 6:439](https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-439)
 - Mobile Detail: [node 6:521](https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-521)
-- Screenshot note: screenshot exports generated during execution are ephemeral; regenerate from the node links if needed.
+- Screenshot pack: [approval-pack/README.md](./approval-pack/README.md)
 - Review note: the mobile detail frame was rebuilt on 2026-05-24 to resolve collapsed-width layout bugs and strengthen review-state logic.
 - Review note: all four approval frames were structurally rebuilt on 2026-05-25 so the geometry audit reports zero visible tiny-width containers.
 - Review note: a second 2026-05-25 pass preserved desktop structure, rebuilt mobile for feed-and-scroll behavior, and added 360x780 QA validation frames.
@@ -46,7 +48,7 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Review note: a second focused 2026-05-26 desktop pass corrected only the selected-invoice lower-card containment for `Facts` and `Evidence and trust`.
 - Review note: a third focused 2026-05-26 desktop pass removed the remaining `Facts`-card regression and tightened supporting desktop signals for a more production-ready finish.
 - Review note: a 2026-05-28 documentation pass anchored the stakeholder feedback into a repo-wide journey-first UX review method and tightened the command-center spec around CTA hierarchy and selected-state differentiation.
-- Reproducibility note: `Desktop - Today` now has a repo-backed structural snapshot and recreate guide, but a durable PNG export is still recommended for a fully locked visual reference.
+- Reproducibility note: `Desktop - Today` still has the repo-backed structural snapshot and recreate guide, and the approval-pack now adds durable PNG exports for the four primary frames.
 
 ## GitHub Tracker
 
@@ -67,3 +69,4 @@ This directory is the repo-backed source package for the invoice review prototyp
 
 - Tablet-specific layout tuning is deferred to [FE-1101](https://github.com/vgeshiktor/invoices-platform/issues/63). The current approval package covers desktop and mobile only.
 - Duplicate-pair comparison messaging can be expanded in a dedicated comparison state under [FE-1004](https://github.com/vgeshiktor/invoices-platform/issues/62) if stakeholder review asks for a side-by-side original versus receipt experience.
+- The latest E12 audit in [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md) narrows the remaining milestone blockers to `#63` tablet review and `#64` mobile-detail readability/accessibility cleanup.
