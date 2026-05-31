@@ -35,5 +35,5 @@ jobs:
         run: |
           python -m venv .venv-invoice
           . .venv-invoice/bin/activate
-          pip install -U pip pytest requests beautifulsoup4
+          pip install -U pip pytest requests beautifulsoup4 lxml pymupdf
           pytest tests/test_invoice_finders.py
