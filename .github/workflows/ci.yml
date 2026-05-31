@@ -22,19 +22,18 @@ jobs:
         with:
           python-version: "3.11"
       - name: Python deps & lint & tests
-        working-directory: apps/workers-py
         run: |
           python -m venv .venv
           . .venv/bin/activate
           pip install -U pip uv
-          uv pip install -r requirements.txt --system || true
+          uv pip install --python .venv/bin/python -r requirements.txt -e apps/workers-py
           pip install ruff pytest
-          ruff check --fix .
-          pytest -q
+          ruff check --fix apps/workers-py
+          pytest -q tests
 
       - name: Invoice finder heuristics tests
         run: |
           python -m venv .venv-invoice
           . .venv-invoice/bin/activate
-          pip install -U pip pytest requests beautifulsoup4
+          pip install -U pip pytest requests beautifulsoup4 lxml pymupdf
           pytest tests/test_invoice_finders.py
