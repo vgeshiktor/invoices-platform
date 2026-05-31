@@ -1,0 +1,35 @@
+{
+  "exportedAt": "2026-05-31",
+  "fileKey": "ORTJPMYSjhBp8TZGZktrWf",
+  "fileUrl": "https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf",
+  "exports": [
+    {
+      "name": "Desktop Today",
+      "nodeId": "6:45",
+      "filename": "desktop-today.png",
+      "width": 1440,
+      "height": 1080
+    },
+    {
+      "name": "Desktop This Month",
+      "nodeId": "6:303",
+      "filename": "desktop-this-month.png",
+      "width": 1440,
+      "height": 1080
+    },
+    {
+      "name": "Mobile Today",
+      "nodeId": "6:439",
+      "filename": "mobile-today.png",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "name": "Mobile Invoice Detail",
+      "nodeId": "6:521",
+      "filename": "mobile-invoice-detail.png",
+      "width": 390,
+      "height": 844
+    }
+  ]
+}
