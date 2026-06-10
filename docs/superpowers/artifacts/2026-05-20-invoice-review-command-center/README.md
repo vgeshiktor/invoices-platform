@@ -20,6 +20,7 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Decision actions button polish: [2026-05-26-decision-actions-button-polish.md](./2026-05-26-decision-actions-button-polish.md)
 - Lower cards containment fix: [2026-05-26-lower-cards-containment-fix.md](./2026-05-26-lower-cards-containment-fix.md)
 - Desktop quality pass: Facts and supporting signals: [2026-05-26-desktop-quality-pass-facts-and-signals.md](./2026-05-26-desktop-quality-pass-facts-and-signals.md)
+- Mobile detail fix evidence: [2026-06-10-mobile-detail-fix-evidence.md](./2026-06-10-mobile-detail-fix-evidence.md)
 - Tablet transfer artifact pack: [2026-06-09-tablet-transfer-artifact-pack.md](./2026-06-09-tablet-transfer-artifact-pack.md)
 - E12 gap audit: [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md)
 - Stakeholder approval screenshot pack: [approval-pack/README.md](./approval-pack/README.md)
@@ -31,6 +32,8 @@ This directory is the repo-backed source package for the invoice review prototyp
 
 - File URL: [Invoice Review Command Center Prototype](https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf)
 - File key: `ORTJPMYSjhBp8TZGZktrWf`
+- Shared Make workspace: [Create Tablet Review Frames](https://www.figma.com/make/ERTkTps2LKHza6lyyUPsRp/Create-Tablet-Review-Frames?t=pw3zZFXibcUmRzC9-1)
+- Shared Make key: `ERTkTps2LKHza6lyyUPsRp`
 - Tablet Make workspace: [Create Tablet Review Frames](https://www.figma.com/make/ERTkTps2LKHza6lyyUPsRp/Create-Tablet-Review-Frames?t=hSvSYAJhHMpZP8jw-1)
 - Tablet Make key: `ERTkTps2LKHza6lyyUPsRp`
 
@@ -42,6 +45,7 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Mobile Detail: [node 6:521](https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf?node-id=6-521)
 - Screenshot pack: [approval-pack/README.md](./approval-pack/README.md)
 - Review note: the mobile detail frame was rebuilt on 2026-05-24 to resolve collapsed-width layout bugs and strengthen review-state logic.
+- Review note: the repo-backed FE-1102 evidence trail is captured in [2026-06-10-mobile-detail-fix-evidence.md](./2026-06-10-mobile-detail-fix-evidence.md), using the shared Make workspace as the canonical final artifact source.
 - Review note: all four approval frames were structurally rebuilt on 2026-05-25 so the geometry audit reports zero visible tiny-width containers.
 - Review note: a second 2026-05-25 pass preserved desktop structure, rebuilt mobile for feed-and-scroll behavior, and added 360x780 QA validation frames.
 - Review note: a focused 2026-05-25 desktop pass corrected only the stats-card description containment while preserving the rest of the dashboard.
