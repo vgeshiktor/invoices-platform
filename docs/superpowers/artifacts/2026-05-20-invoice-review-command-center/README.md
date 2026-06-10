@@ -20,6 +20,7 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Decision actions button polish: [2026-05-26-decision-actions-button-polish.md](./2026-05-26-decision-actions-button-polish.md)
 - Lower cards containment fix: [2026-05-26-lower-cards-containment-fix.md](./2026-05-26-lower-cards-containment-fix.md)
 - Desktop quality pass: Facts and supporting signals: [2026-05-26-desktop-quality-pass-facts-and-signals.md](./2026-05-26-desktop-quality-pass-facts-and-signals.md)
+- Tablet transfer artifact pack: [2026-06-09-tablet-transfer-artifact-pack.md](./2026-06-09-tablet-transfer-artifact-pack.md)
 - E12 gap audit: [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md)
 - Stakeholder approval screenshot pack: [approval-pack/README.md](./approval-pack/README.md)
 - Desktop Today reproducibility guide: [desktop-today-reproducibility.md](./desktop-today-reproducibility.md)
@@ -30,6 +31,8 @@ This directory is the repo-backed source package for the invoice review prototyp
 
 - File URL: [Invoice Review Command Center Prototype](https://www.figma.com/design/ORTJPMYSjhBp8TZGZktrWf)
 - File key: `ORTJPMYSjhBp8TZGZktrWf`
+- Tablet Make workspace: [Create Tablet Review Frames](https://www.figma.com/make/ERTkTps2LKHza6lyyUPsRp/Create-Tablet-Review-Frames?t=hSvSYAJhHMpZP8jw-1)
+- Tablet Make key: `ERTkTps2LKHza6lyyUPsRp`
 
 ## Approval Frames
 
@@ -67,6 +70,6 @@ This directory is the repo-backed source package for the invoice review prototyp
 
 ## Deferred UX Issues
 
-- Tablet-specific layout tuning is deferred to [FE-1101](https://github.com/vgeshiktor/invoices-platform/issues/63). The current approval package covers desktop and mobile only.
+- Tablet evidence is now anchored in [2026-06-09-tablet-transfer-artifact-pack.md](./2026-06-09-tablet-transfer-artifact-pack.md), which records the shared Figma Make workspace for `Tablet Today`, `Tablet This Month`, and `Tablet Invoice Detail`. Any remaining FE-1101 closeout work is traceability polish, not missing concept coverage.
 - Duplicate-pair comparison messaging can be expanded in a dedicated comparison state under [FE-1004](https://github.com/vgeshiktor/invoices-platform/issues/62) if stakeholder review asks for a side-by-side original versus receipt experience.
 - The latest E12 audit in [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md) narrows the remaining milestone blockers to `#63` tablet review and `#64` mobile-detail readability/accessibility cleanup.
