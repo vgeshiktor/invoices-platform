@@ -16,15 +16,17 @@ This repo note records that shared source so FE-1101 closure does not depend on 
 The shared Make workspace contains the three approved tablet artifacts for FE-1101:
 
 - `Tablet Today`
-  - Make source reference: `src/app/components/TabletToday.tsx`
+  - Figma Make workspace source file: `ERTkTps2LKHza6lyyUPsRp / src/app/components/TabletToday.tsx`
 - `Tablet This Month`
-  - Make source reference: `src/app/components/TabletThisMonth.tsx`
+  - Figma Make workspace source file: `ERTkTps2LKHza6lyyUPsRp / src/app/components/TabletThisMonth.tsx`
 - `Tablet Invoice Detail`
-  - Make source reference: `src/app/components/TabletInvoiceDetail.tsx`
+  - Figma Make workspace source file: `ERTkTps2LKHza6lyyUPsRp / src/app/components/TabletInvoiceDetail.tsx`
+
+These are Figma Make internal source-file references surfaced from the shared workspace. They are not files in this repository.
 
 ## Supporting Transfer Evidence Present In The Make Workspace
 
-The Figma Make context also exposes supporting FE-1101 handoff materials:
+The Figma Make context also exposes the following FE-1101 handoff materials inside the same shared workspace. These files are referenced within that Figma Make workspace and are not stored in this repository:
 
 - `FE-1101_FIGMA_TRANSFER_GUIDE.md`
 - `README_TABLET_FRAMES.md`
@@ -33,7 +35,7 @@ The Figma Make context also exposes supporting FE-1101 handoff materials:
 - `FE-1101_DESIGN_COMPARISON.md`
 - `TABLET_DESIGN_NOTES.md`
 
-These files are part of the same Make workspace and reinforce that the tablet work was completed as a documented handoff package, not just as isolated visual experiments.
+These workspace-referenced materials reinforce that the tablet work was completed as a documented handoff package, not just as isolated visual experiments.
 
 ## Source-Of-Truth Statement
 
