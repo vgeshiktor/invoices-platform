@@ -221,6 +221,27 @@ def test_infer_totals_municipal_block_enforces_zero_vat():
     assert totals["breakdown_values"] == [100.0, 200.0]
 
 
+def test_infer_totals_zero_vat_dot_date_and_pango_markers():
+    text = "\n".join(
+        [
+            "14.05.2026",
+            "191100662 :חשבונית מס/קבלה מספר",
+            "חניון היקב+972528024157",
+            'סה"כ אינו חייב במע"מ:',
+            "₪ 16.89",
+            'מע"מ: 0.00%',
+            "support@pango.co.il",
+        ]
+    )
+    totals = report.infer_totals(report.extract_lines(text), text)
+    assert report.infer_invoice_date(text) == "14/05/2026"
+    assert report.detect_known_vendor(text) == "Pango"
+    assert totals["invoice_total"] == pytest.approx(16.89)
+    assert totals["invoice_vat"] == pytest.approx(0.0)
+    assert totals["base_before_vat"] == pytest.approx(16.89)
+    assert totals["vat_rate"] == pytest.approx(0.0)
+
+
 def test_period_due_date_and_reference_helpers():
     text = "תקופה: 01/09/2025 - 30/09/2025 לתשלום עד 15.10.2025 PO #12345"
     start, end, label = report.extract_period_info(text)
