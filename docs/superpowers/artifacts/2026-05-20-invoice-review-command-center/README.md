@@ -20,9 +20,11 @@ This directory is the repo-backed source package for the invoice review prototyp
 - Decision actions button polish: [2026-05-26-decision-actions-button-polish.md](./2026-05-26-decision-actions-button-polish.md)
 - Lower cards containment fix: [2026-05-26-lower-cards-containment-fix.md](./2026-05-26-lower-cards-containment-fix.md)
 - Desktop quality pass: Facts and supporting signals: [2026-05-26-desktop-quality-pass-facts-and-signals.md](./2026-05-26-desktop-quality-pass-facts-and-signals.md)
+- Remaining design prompts: [2026-06-02-remaining-design-prompts.md](./2026-06-02-remaining-design-prompts.md)
 - Mobile detail fix evidence: [2026-06-10-mobile-detail-fix-evidence.md](./2026-06-10-mobile-detail-fix-evidence.md)
 - Tablet transfer artifact pack: [2026-06-09-tablet-transfer-artifact-pack.md](./2026-06-09-tablet-transfer-artifact-pack.md)
 - E12 gap audit: [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md)
+- E12 closeout note: [2026-06-11-e12-closeout.md](./2026-06-11-e12-closeout.md)
 - Stakeholder approval screenshot pack: [approval-pack/README.md](./approval-pack/README.md)
 - Desktop Today reproducibility guide: [desktop-today-reproducibility.md](./desktop-today-reproducibility.md)
 - Desktop Today reproducibility snapshot: [desktop-today-reproducibility.json](./desktop-today-reproducibility.json)
@@ -74,6 +76,6 @@ This directory is the repo-backed source package for the invoice review prototyp
 
 ## Deferred UX Issues
 
-- Tablet evidence is now anchored in [2026-06-09-tablet-transfer-artifact-pack.md](./2026-06-09-tablet-transfer-artifact-pack.md), which records the shared Figma Make workspace for `Tablet Today`, `Tablet This Month`, and `Tablet Invoice Detail`. Any remaining FE-1101 closeout work is traceability polish, not missing concept coverage.
+- FE-1101, FE-1102, and FE-1103 now have explicit repo-backed evidence. Use [2026-06-11-e12-closeout.md](./2026-06-11-e12-closeout.md) as the milestone closeout source of truth.
 - Duplicate-pair comparison messaging can be expanded in a dedicated comparison state under [FE-1004](https://github.com/vgeshiktor/invoices-platform/issues/62) if stakeholder review asks for a side-by-side original versus receipt experience.
-- The latest E12 audit in [2026-05-31-e12-gap-audit.md](./2026-05-31-e12-gap-audit.md) narrows the remaining milestone blockers to `#63` tablet review and `#64` mobile-detail readability/accessibility cleanup.
+- If future traceability work needs tighter precision, add node-specific design URLs and document whether the final tablet/mobile evidence remains Make-anchored or is transferred into the main prototype file.
