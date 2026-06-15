@@ -207,7 +207,7 @@ The repo therefore uses the filesystem itself as the main state machine:
 
 ### What is provisioned but not yet wired into app code
 
-Postgres and RabbitMQ are present in Compose, but the current application code does not contain implemented database or message-broker usage. Today’s ingestion, orchestration, and reporting flows are still local-process and filesystem based.
+Postgres and RabbitMQ are present in Compose, but the current application code does not contain implemented database or message-broker usage. Today’s ingestion, orchestration, and reporting flows are still local-process and filesystem-based.
 
 ## Automation Model
 
@@ -246,7 +246,7 @@ There is no implemented central application database for invoices, vendors, run 
 ### Weak Boundaries
 
 - Gmail and Graph CLIs each contain substantial business logic, provider quirks, and persistence details.
-- The domain/usecase/adapter packages exist, but most workflow logic has not yet been extracted into them.
+- The `domain/`, `usecases/`, and `adapters/` packages exist, but most workflow logic has not yet been extracted into them.
 - The Go API and Compose stack do not yet front or coordinate the Python workflows.
 
 ## Current Architecture Summary
