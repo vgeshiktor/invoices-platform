@@ -87,6 +87,7 @@ def sanitize_report_value(value):
         return {key: sanitize_report_value(item) for key, item in value.items()}
     return value
 
+
 KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("יול ימר", "רמי לוי תקשורת"),
     ("פרטנר", 'חברת פרטנר תקשורת בע"מ'),
@@ -367,7 +368,9 @@ def normalize_date_token(token: str, default_day: Optional[int] = None) -> Optio
 def is_date_like_token(token: Optional[str]) -> bool:
     if not token:
         return False
-    candidate = token.strip().replace("\\", "-").replace("/", "-").replace(".", "-").replace(",", "-")
+    candidate = (
+        token.strip().replace("\\", "-").replace("/", "-").replace(".", "-").replace(",", "-")
+    )
     if not re.fullmatch(r"\d{1,4}(?:-\d{1,2}){1,2}", candidate):
         return False
     return normalize_date_token(candidate) is not None

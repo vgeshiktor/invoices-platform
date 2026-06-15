@@ -1,6 +1,5 @@
 import csv
 import json
-from pathlib import Path
 
 from invplatform.cli import invoices_report as report
 from invplatform.cli import monthly_invoices as monthly
@@ -34,7 +33,9 @@ def test_monthly_summary_marks_partial_failure_and_utc_half_open_window(tmp_path
         label="01_2025",
         results=[
             monthly.ProviderResult("gmail", tmp_path / "gmail", ["gmail-cmd"], 0, 1.25),
-            monthly.ProviderResult("outlook", tmp_path / "outlook", ["graph-cmd"], 1, 2.5),
+            monthly.ProviderResult(
+                "outlook", tmp_path / "outlook", ["graph-cmd"], 1, 2.5
+            ),
         ],
         consolidation={"copied": 1, "duplicates": 0, "sources": 1, "existing": 0},
         dedupe={"gmail": {"kept": 1, "moved": 0}},
@@ -50,7 +51,9 @@ def test_monthly_summary_marks_partial_failure_and_utc_half_open_window(tmp_path
     assert payload["timezone"] == "UTC"
 
 
-def test_report_outputs_round_money_redact_secrets_and_preserve_multilingual_text(tmp_path):
+def test_report_outputs_round_money_redact_secrets_and_preserve_multilingual_text(
+    tmp_path,
+):
     json_path = tmp_path / "report.json"
     csv_path = tmp_path / "report.csv"
     summary_path = tmp_path / "summary.csv"
@@ -74,7 +77,9 @@ def test_report_outputs_round_money_redact_secrets_and_preserve_multilingual_tex
 
     json_text = json_path.read_text(encoding="utf-8")
     csv_text = csv_path.read_text(encoding="utf-8")
-    summary_rows = list(csv.reader(summary_path.read_text(encoding="utf-8").splitlines()))
+    summary_rows = list(
+        csv.reader(summary_path.read_text(encoding="utf-8").splitlines())
+    )
     payload = json.loads(json_text)
 
     assert "חשבונית Invoice bilingual" in json_text
