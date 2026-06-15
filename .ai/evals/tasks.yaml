@@ -1,0 +1,146 @@
+tasks:
+  - id: docs-usage-report-example
+    name: Update report-generation examples in docs
+    reasoning_level: ai:light
+    scope: docs/how-to alignment for invoice report CLI examples and output paths
+    source_of_truth:
+      - README.md
+      - docs/USAGE.md
+      - Makefile
+    required_validation:
+      - Confirm command examples match current `make run-report` behavior.
+      - Confirm no product code files changed.
+    success_criteria:
+      - Docs examples use real current flags and output files.
+      - Orientation stays split between quick start and detailed usage.
+
+  - id: readme-governance-discovery
+    name: Add minimal discoverability links for repo governance files
+    reasoning_level: ai:light
+    scope: README documentation map alignment for repo-level working guidance
+    source_of_truth:
+      - README.md
+      - AGENTS.md
+      - PLANS.md
+      - .ai/README.md
+    required_validation:
+      - Confirm all linked governance paths exist.
+      - Confirm README changes stay discoverability-only.
+    success_criteria:
+      - Contributors can find governance files from README.
+      - No workflow policy is added beyond what repo files support.
+
+  - id: cli-monthly-runbook-check
+    name: Review monthly orchestration runbook consistency
+    reasoning_level: ai:standard
+    scope: docs and workflow consistency across monthly CLI examples, token-cache guidance, and local scheduler notes
+    source_of_truth:
+      - docs/USAGE.md
+      - README.md
+      - Makefile
+    required_validation:
+      - Compare `run-monthly` examples against current Makefile variables.
+      - Verify scheduler notes do not conflict with documented auth flow.
+    success_criteria:
+      - Monthly runbook is internally consistent.
+      - Graph bootstrap and unattended-token guidance stay accurate.
+
+  - id: report-validation-surface-review
+    name: Validate report-generation workflow documentation against current outputs
+    reasoning_level: ai:standard
+    scope: docs and validation coverage for JSON, CSV, summary CSV, and PDF report outputs
+    source_of_truth:
+      - README.md
+      - docs/USAGE.md
+      - tests/test_invoices_report.py
+      - tests/test_invoices_report_utils.py
+    required_validation:
+      - Check output names and flags against tests and CLI docs.
+      - Run targeted tests if behavior documentation changes materially.
+    success_criteria:
+      - Report docs describe only implemented outputs.
+      - Validation commands clearly map to report behavior.
+
+  - id: local-stack-docs-fit
+    name: Align local stack documentation with current dev commands
+    reasoning_level: ai:standard
+    scope: local Docker Compose, n8n, api-go, and workers-py onboarding guidance
+    source_of_truth:
+      - README.md
+      - docs/USAGE.md
+      - Makefile
+      - deploy/compose/docker-compose.dev.yml
+    required_validation:
+      - Confirm documented `make dev`, `make up`, `make run-n8n`, and API references match current stack files.
+      - Confirm no unsupported services are described as implemented.
+    success_criteria:
+      - Local stack docs match current commands and services.
+      - Current vs future API scope remains explicit.
+
+  - id: auth-token-flow-review
+    name: Review Gmail and Graph token-handling guidance
+    reasoning_level: ai:deep
+    scope: auth/bootstrap/runbook review across Gmail OAuth files, Graph interactive auth, cache reuse, and unattended exits
+    source_of_truth:
+      - docs/USAGE.md
+      - README.md
+      - Makefile
+      - apps/workers-py/src/invplatform/cli/graph_invoice_finder.py
+      - tests/test_graph_invoice_auth.py
+    required_validation:
+      - Verify documented Graph auth flags and cache behavior against code and tests.
+      - Verify Gmail credential-file guidance matches implemented expectations.
+    success_criteria:
+      - Auth docs are accurate and avoid invented behavior.
+      - Unattended and bootstrap flows are clearly distinguished.
+
+  - id: command-surface-governance-pass
+    name: Audit repo command surfaces and source-of-truth order
+    reasoning_level: ai:deep
+    scope: governance review of which docs and commands should be treated as authoritative for day-to-day work
+    source_of_truth:
+      - AGENTS.md
+      - README.md
+      - docs/USAGE.md
+      - Makefile
+      - pytest.ini
+      - requirements.txt
+    required_validation:
+      - Confirm source-of-truth order matches actual repo usage.
+      - Confirm validation guidance references real commands only.
+    success_criteria:
+      - Repo-owned guidance is minimal, accurate, and practical.
+      - Stable rules and project-state tracking stay clearly separated.
+
+  - id: pull-request-workflow-review
+    name: Review a docs-and-workflow pull request for accuracy and risk
+    reasoning_level: ai:review
+    scope: code review focused on docs regressions, broken commands, missing validation, and invented governance policy
+    source_of_truth:
+      - README.md
+      - docs/USAGE.md
+      - AGENTS.md
+      - PLANS.md
+      - Makefile
+    required_validation:
+      - Inspect changed files and cited commands.
+      - Flag any policy or behavior claims not supported by repo files.
+    success_criteria:
+      - Findings prioritize real regressions and unsupported claims.
+      - Review output separates findings from optional polish.
+
+  - id: workflow-change-review
+    name: Review a CLI workflow change touching docs, commands, and tests
+    reasoning_level: ai:review
+    scope: review of command-surface changes affecting contributor workflows or report-validation paths
+    source_of_truth:
+      - Makefile
+      - docs/USAGE.md
+      - pytest.ini
+      - tests/
+    required_validation:
+      - Check that command examples and validation still line up after the diff.
+      - Check for missing or outdated test guidance.
+    success_criteria:
+      - Review catches workflow regressions before merge.
+      - Validation expectations remain explicit and runnable.

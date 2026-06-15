@@ -10,10 +10,27 @@ This guide documents all currently implemented user-facing functionality in this
 pip install -r requirements.txt
 ```
 
+For Docker Compose-backed workflows:
+- copy `.env.example` to `.env`
+- set `GRAPH_CLIENT_ID` in `.env` if you use Outlook/Graph monthly or n8n flows
+
 ### 1.2 Optional: run full local stack
 
 ```bash
 make dev
+```
+
+Alternative lifecycle commands:
+
+```bash
+# start services in background
+make up
+
+# stop background services
+make down
+
+# rebuild/start only n8n in the dev stack
+make run-n8n
 ```
 
 Services in `deploy/compose/docker-compose.dev.yml`:
@@ -29,6 +46,7 @@ Services in `deploy/compose/docker-compose.dev.yml`:
   - `credentials.json`
   - `token.json` (created after first auth flow)
 - Graph finder requires `--client-id` (or `GRAPH_CLIENT_ID` for monthly orchestration).
+- Docker Compose-backed monthly and n8n flows expect `GRAPH_CLIENT_ID` in the repo root `.env`.
 
 ## 2. Command Matrix
 
@@ -161,6 +179,12 @@ Outputs:
 - CSV report
 - Summary CSV totals
 - PDF report
+
+Default `make run-report` output paths:
+- `reports/invoice_report.json`
+- `reports/invoice_report.csv`
+- `reports/invoice_report.summary.csv`
+- `reports/invoice_report.pdf`
 
 Parsing/report functionality:
 - Extracts invoice fields from PDFs (id, date, vendor, purpose, totals, VAT, period, refs, etc.).
@@ -331,6 +355,7 @@ Targeted test suites:
 
 ```bash
 pytest -q tests/test_invoices_report.py tests/test_invoices_report_utils.py
+pytest -q tests/test_monthly_invoices.py tests/test_graph_invoice_auth.py
 pytest -q tests/test_invoice_finders.py
 ```
 

@@ -21,6 +21,9 @@ Monorepo for invoice discovery, PDF collection, and invoice reporting across Gma
 
 - `README.md` (this file): project overview + quick start + workflow map.
 - `docs/USAGE.md`: full command reference and how-to usage for all current functionality.
+- `AGENTS.md`: stable repo operating rules for AI-assisted work.
+- `PLANS.md`: current repo state, progress notes, and next-step guidance.
+- `.ai/README.md`: task-packet and eval contract for substantial AI-assisted work.
 - `docs/UX_REVIEW_METHOD.md`: journey-first UX review standard for product screens, prototypes, and design feedback.
 - `docs/META_BILLING_GRAPH_API_EXPLORER.md`: ready-to-paste Graph API Explorer URLs for Meta billing diagnostics.
 - `integrations/openapi/invoices.yaml`: API contract draft (broader than currently implemented Go handlers).
@@ -56,6 +59,11 @@ References used for this structure:
 pip install -r requirements.txt
 ```
 
+### Optional: prepare local stack environment
+
+- Copy `.env.example` to `.env` before using Docker Compose-backed workflows.
+- Set `GRAPH_CLIENT_ID` in `.env` if you plan to run Outlook/Graph monthly flows or the n8n bootstrap/daily workflows.
+
 ### Run tests
 
 ```bash
@@ -79,6 +87,12 @@ make run-report REPORT_INPUT_DIR=invoices/invoices_01_2026
 
 # Quarantine likely non-invoice PDFs
 make quarantine
+
+# Local stack lifecycle
+make dev
+make up
+make down
+make run-n8n
 ```
 
 For complete options and examples, use `docs/USAGE.md`.
@@ -93,6 +107,7 @@ For complete options and examples, use `docs/USAGE.md`.
   - `invoices/invoices_MM_YYYY/run_summary.json`
 - Report outputs:
   - `report-*.json`, `report-*.csv`, `report-*.summary.csv`, `report-*.pdf` (or custom output paths)
+  - `make run-report` defaults to `reports/invoice_report.json`, `reports/invoice_report.csv`, `reports/invoice_report.summary.csv`, and `reports/invoice_report.pdf`
 
 ## API Status (Current)
 
