@@ -311,6 +311,17 @@ def normalize_date_token(token: str, default_day: Optional[int] = None) -> Optio
     return None
 
 
+def is_date_like_token(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    candidate = (
+        token.strip().replace("\\", "-").replace("/", "-").replace(".", "-").replace(",", "-")
+    )
+    if not re.fullmatch(r"\d{1,4}(?:-\d{1,2}){1,2}", candidate):
+        return False
+    return normalize_date_token(candidate) is not None
+
+
 def extract_period_info(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     if not text:
         return None, None, None
@@ -967,7 +978,7 @@ def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
 
     def add_candidate(value: Optional[str], priority: int) -> None:
         val = (value or "").strip()
-        if not val:
+        if not val or is_date_like_token(val):
             return
         cleaned = re.sub(r"[^\d]", "", val)
         candidates.append((priority, cleaned or val))
@@ -1606,13 +1617,19 @@ def extract_vat_rate_from_text(text: Optional[str]) -> Optional[float]:
         rf"{vat_marker}[^%\d]{{0,15}}?([\d.,]+)\s*%",
         r"VAT[^%\d]{0,15}?([\d.,]+)\s*%",
     ]
+    matches: List[Tuple[int, float]] = []
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             value = parse_number(match.group(1))
             if value is not None:
-                return round(value, 2)
-    return None
+                matches.append((match.start(1), round(value, 2)))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0])
+    positive = [value for _, value in matches if value > 0]
+    if positive:
+        return positive[-1]
+    return matches[-1][1]
 
 
 def infer_totals(
