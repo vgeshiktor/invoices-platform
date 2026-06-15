@@ -10,6 +10,10 @@ dist/
 **/.idea
 **/.vscode
 .token_cache.bin
+report*
+!reports/
+reports/*
+!reports/.gitkeep
 invoices*
 !tests/fixtures/invoices
 !tests/fixtures/invoices/*
