@@ -1,4 +1,16 @@
 tasks:
+  - id: cross-provider-dedup
+    fixture: .ai/evals/fixtures/cross-provider-dedup/
+    command: make eval-cross-provider-dedup
+    expected:
+      invoice_count: 1
+      duplicate_count: 1
+    forbidden:
+      - credential_content_in_logs
+      - modification_outside_temp_dir
+    threshold: pass
+
+legacy_review_templates:
   - id: docs-usage-report-example
     name: Update report-generation examples in docs
     reasoning_level: ai:light
@@ -144,3 +156,10 @@ tasks:
     success_criteria:
       - Review catches workflow regressions before merge.
       - Validation expectations remain explicit and runnable.
+
+p1_after_first_hardening_pr:
+  - Add property-based tests for deduplication, date intervals, and monetary calculations.
+  - Validate the OpenAPI draft against actual implementation boundaries.
+  - Add dependency and static-security checks.
+  - Add structured run summaries containing provider status, duration, counts, failures, and redacted diagnostics.
+  - Add failure injection for unavailable providers, malformed PDFs, and interrupted writes.
