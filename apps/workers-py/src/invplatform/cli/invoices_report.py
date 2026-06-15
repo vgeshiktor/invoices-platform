@@ -4,6 +4,7 @@ import argparse
 import calendar
 from collections import Counter
 import csv
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import html
 import json
@@ -32,6 +33,59 @@ except ModuleNotFoundError:
 
 
 Amount = Optional[float]
+MONEY_QUANTUM = Decimal("0.01")
+REPORT_SECRET_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"Authorization:\s*Bearer\s+\S+", flags=re.IGNORECASE),
+        "[REDACTED_AUTH_HEADER]",
+    ),
+    (
+        re.compile(r"Bearer\s+\S+", flags=re.IGNORECASE),
+        "[REDACTED_BEARER_TOKEN]",
+    ),
+    (
+        re.compile(r"[^\s'\",;]*(?:credentials|token)\.json"),
+        "[REDACTED_CREDENTIAL_PATH]",
+    ),
+    (
+        re.compile(r"[^\s'\",;]*\.msal[\w.-]*\.bin|[^\s'\",;]*msal[_\w.-]*cache[\w.-]*\.bin"),
+        "[REDACTED_TOKEN_CACHE_PATH]",
+    ),
+)
+
+
+def _to_decimal(value: float | int) -> Decimal:
+    return Decimal(str(value))
+
+
+def round_money(value: float | int | None) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        quantized = _to_decimal(value).quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return None
+    return float(quantized)
+
+
+def sanitize_report_text(text: str) -> str:
+    sanitized = text
+    for pattern, replacement in REPORT_SECRET_PATTERNS:
+        sanitized = pattern.sub(replacement, sanitized)
+    return sanitized
+
+
+def sanitize_report_value(value):
+    if isinstance(value, float):
+        rounded = round_money(value)
+        return rounded if rounded is not None else value
+    if isinstance(value, str):
+        return sanitize_report_text(value)
+    if isinstance(value, list):
+        return [sanitize_report_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: sanitize_report_value(item) for key, item in value.items()}
+    return value
 
 KNOWN_VENDOR_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("יול ימר", "רמי לוי תקשורת"),
@@ -128,9 +182,12 @@ class InvoiceRecord:
     municipal: Optional[bool] = None
     duplicate_hash: Optional[str] = None
 
+    def to_public_dict(self) -> Dict[str, object]:
+        return sanitize_report_value(asdict(self))
+
     def to_csv_row(self, fields: Sequence[str]) -> List[str]:
         row = []
-        data = asdict(self)
+        data = self.to_public_dict()
         for field in fields:
             value = data.get(field)
             if isinstance(value, float):
@@ -305,6 +362,15 @@ def normalize_date_token(token: str, default_day: Optional[int] = None) -> Optio
         day = min(day, calendar.monthrange(year, month)[1])
         return date(year, month, day).strftime("%Y-%m-%d")
     return None
+
+
+def is_date_like_token(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    candidate = token.strip().replace("\\", "-").replace("/", "-").replace(".", "-").replace(",", "-")
+    if not re.fullmatch(r"\d{1,4}(?:-\d{1,2}){1,2}", candidate):
+        return False
+    return normalize_date_token(candidate) is not None
 
 
 def extract_period_info(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -948,7 +1014,7 @@ def infer_invoice_id(lines: List[str], text: str) -> Optional[str]:
 
     def add_candidate(value: Optional[str], priority: int) -> None:
         val = (value or "").strip()
-        if not val:
+        if not val or is_date_like_token(val):
             return
         cleaned = re.sub(r"[^\d]", "", val)
         candidates.append((priority, cleaned or val))
@@ -1569,13 +1635,19 @@ def extract_vat_rate_from_text(text: Optional[str]) -> Optional[float]:
         rf"{vat_marker}[^%\d]{{0,15}}?([\d.,]+)\s*%",
         r"VAT[^%\d]{0,15}?([\d.,]+)\s*%",
     ]
+    matches: List[Tuple[int, float]] = []
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             value = parse_number(match.group(1))
             if value is not None:
-                return round(value, 2)
-    return None
+                matches.append((match.start(1), round(value, 2)))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0])
+    positive = [value for _, value in matches if value > 0]
+    if positive:
+        return positive[-1]
+    return matches[-1][1]
 
 
 def infer_totals(
@@ -2123,7 +2195,7 @@ def generate_report(
 def write_json(records: List[InvoiceRecord], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fh:
-        json.dump([asdict(rec) for rec in records], fh, ensure_ascii=False, indent=2)
+        json.dump([rec.to_public_dict() for rec in records], fh, ensure_ascii=False, indent=2)
 
 
 def write_csv(records: List[InvoiceRecord], output_path: Path) -> None:
@@ -2169,7 +2241,8 @@ def write_summary_csv(
         if value is None:
             return ""
         if isinstance(value, float):
-            return f"{value:.2f}"
+            rounded = round_money(value)
+            return f"{rounded:.2f}" if rounded is not None else ""
         return str(value)
 
     fields = [
@@ -2509,8 +2582,8 @@ def compute_report_totals(
     records: Sequence[InvoiceRecord],
 ) -> Dict[str, Dict[str, Optional[float] | int]]:
     def stats_for(field: str) -> Dict[str, Optional[float]]:
-        total = 0.0
-        abs_total = 0.0
+        total = Decimal("0")
+        abs_total = Decimal("0")
         count = 0
         missing = 0
         zero = 0
@@ -2526,9 +2599,10 @@ def compute_report_totals(
             if value == 0:
                 zero += 1
                 continue
+            decimal_value = _to_decimal(value)
             count += 1
-            total += value
-            abs_total += abs(value)
+            total += decimal_value
+            abs_total += abs(decimal_value)
             if value < 0:
                 negative += 1
             else:
@@ -2537,17 +2611,21 @@ def compute_report_totals(
                 min_val = value
             if max_val is None or value > max_val:
                 max_val = value
-        avg = round(total / count, 2) if count else None
+        avg = (
+            float((total / Decimal(count)).quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP))
+            if count
+            else None
+        )
         return {
-            "sum": round(total, 2),
-            "abs_sum": round(abs_total, 2),
+            "sum": float(total.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)),
+            "abs_sum": float(abs_total.quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)),
             "count": count,
             "missing": missing,
             "zero": zero,
             "negative": negative,
             "positive": positive,
-            "min": min_val,
-            "max": max_val,
+            "min": round_money(min_val),
+            "max": round_money(max_val),
             "avg": avg,
         }
 

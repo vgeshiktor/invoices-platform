@@ -41,6 +41,8 @@ PROJECT_SRC = Path(__file__).resolve().parents[2]
 DEFAULT_PYTHON = os.environ.get("PYTHON") or sys.executable
 SKIP_DIRS = {"_tmp", "quarantine", "duplicates"}
 HAVE_PYMUPDF = getattr(domain_pdf, "HAVE_PYMUPDF", False)
+SUMMARY_TIMEZONE = "UTC"
+SUMMARY_INTERVAL_SEMANTICS = "[start_date, end_date)"
 
 # Ensure direct execution works without exporting PYTHONPATH first.
 if str(PROJECT_SRC) not in sys.path:
@@ -398,11 +400,24 @@ def write_summary(
     dedupe: Dict[str, Dict[str, int]],
     stage_timings: Dict[str, object],
 ) -> None:
+    failed_providers = [r.name for r in results if r.returncode != 0]
+    successful_providers = [r.name for r in results if r.returncode == 0]
+    if failed_providers and successful_providers:
+        status = "partial_failure"
+    elif failed_providers:
+        status = "failure"
+    else:
+        status = "success"
     summary = {
+        "status": status,
+        "timezone": SUMMARY_TIMEZONE,
+        "date_interval_semantics": SUMMARY_INTERVAL_SEMANTICS,
         "start_date": start_date,
         "end_date": end_date,
         "label": label,
         "consolidated_dir": str(dest_dir),
+        "successful_providers": successful_providers,
+        "failed_providers": failed_providers,
         "providers": {
             r.name: {
                 "invoices_dir": str(r.invoices_dir),

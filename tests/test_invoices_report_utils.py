@@ -233,6 +233,11 @@ def test_period_due_date_and_reference_helpers():
     assert "12345" in refs
 
 
+def test_extract_vat_rate_from_text_prefers_positive_summary_rate():
+    text = 'פטור ממע"מ: 0.00%\nסה"כ מע"מ 18%'
+    assert report.extract_vat_rate_from_text(text) == pytest.approx(18.0)
+
+
 def test_classification_and_confidence_helpers():
     category, confidence, rule = report.classify_invoice(
         "חשבונית בזק שירותי אינטרנט", "בזק", False
@@ -275,6 +280,12 @@ def test_extract_period_info_supports_ranges_and_bilingual_labels_text_sample():
 def test_infer_invoice_date_fallback_grabs_first_numeric_text_sample():
     text = ARNONA_TEXT.replace("תאריך הדפסה:", "תאריך מדומה:")
     assert report.infer_invoice_date(text) == "01/09/2025"
+
+
+def test_infer_invoice_id_skips_iso_date_tokens_from_number_fallback():
+    lines = ["Date: 2026-05-14", "רפסמ"]
+    text = "\n".join(lines)
+    assert report.infer_invoice_id(lines, text) is None
 
 
 def test_infer_invoice_from_municipal_text_text_sample():
