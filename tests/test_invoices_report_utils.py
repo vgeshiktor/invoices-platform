@@ -657,8 +657,7 @@ def test_extract_just_simple_invoice_for_from_description_column():
         "כמות",
     ]
     text = (
-        'JUST SIMPLE LTD  -  מ" בע חשבונית קבלה תאור '
-        "תפעול מס 12/25 שוטף פנסיוני - כמות"
+        'JUST SIMPLE LTD  -  מ" בע חשבונית קבלה תאור תפעול מס 12/25 שוטף פנסיוני - כמות'
     )
     assert (
         report.extract_just_simple_invoice_for(lines, text)

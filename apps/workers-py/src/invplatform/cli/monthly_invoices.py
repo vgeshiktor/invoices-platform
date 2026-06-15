@@ -517,7 +517,7 @@ def main() -> None:
         f"duplicates={consolidation_stats.get('duplicates', 0)}"
     )
     total_seconds = time.monotonic() - total_start
-    print("[MONTHLY_STAGE] total " f"duration={fmt_duration(total_seconds)} ({total_seconds:.1f}s)")
+    print(f"[MONTHLY_STAGE] total duration={fmt_duration(total_seconds)} ({total_seconds:.1f}s)")
     stage_timings = {
         "providers_total_seconds": round(provider_stage_seconds, 3),
         "per_provider_seconds": {r.name: round(r.duration_seconds, 3) for r in results},

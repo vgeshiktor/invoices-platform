@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt run-gmail run-graph run-report run-monthly run-n8n quarantine
+.PHONY: setup dev up down test lint fmt verify verify-python verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets run-gmail run-graph run-report run-monthly run-n8n quarantine
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -35,6 +35,32 @@ lint:
 fmt:
 	$(MAKE) -C apps/api-go fmt
 	$(MAKE) -C apps/workers-py fmt
+
+verify: verify-python verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets
+
+verify-python:
+	ruff check apps/workers-py tests
+	ruff format --check apps/workers-py tests
+	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m pytest -q tests
+
+verify-go:
+	@unformatted="$$(cd apps/api-go && gofmt -l .)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+	cd apps/api-go && go vet ./...
+	cd apps/api-go && go test ./...
+
+verify-module-tidiness:
+	cd apps/api-go && go mod tidy
+	git diff --exit-code -- apps/api-go/go.mod apps/api-go/go.sum
+
+verify-artifact-schemas:
+	$(PYTHON) scripts/validate_artifact_schemas.py
+
+verify-generated-artifact-secrets:
+	$(PYTHON) scripts/check_generated_artifact_secrets.py
 
 PYTHON ?= python
 PYTHONPATH_EXTRA := apps/workers-py/src

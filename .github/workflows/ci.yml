@@ -10,30 +10,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - name: Go test & lint
-        working-directory: apps/api-go
-        run: |
-          go mod tidy
-          go vet ./...
-          go test ./...
-
-      # Python
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Python deps & lint & tests
+      - name: Install verify dependencies
         run: |
           python -m venv .venv
           . .venv/bin/activate
           pip install -U pip uv
           uv pip install --python .venv/bin/python -r requirements.txt -e apps/workers-py
           pip install ruff pytest
-          ruff check --fix apps/workers-py
-          pytest -q tests
-
-      - name: Invoice finder heuristics tests
+      - name: Verify
         run: |
-          python -m venv .venv-invoice
-          . .venv-invoice/bin/activate
-          pip install -U pip pytest requests beautifulsoup4 lxml pymupdf
-          pytest tests/test_invoice_finders.py
+          . .venv/bin/activate
+          make verify
