@@ -257,6 +257,20 @@ def test_stingtv_invoice_fields(monkeypatch):
     assert record.breakdown_sum == pytest.approx(record.invoice_total, rel=1e-3)
 
 
+def test_pango_parking_invoice_fields(monkeypatch):
+    record = _parse_fixture_invoice(monkeypatch, "pango_parking_191100662.txt")
+    assert record.invoice_id == "191100662"
+    assert record.invoice_date == "14/05/2026"
+    assert record.invoice_from == "Pango"
+    assert record.invoice_for == "חניון היקב"
+    assert record.invoice_total == pytest.approx(16.89, rel=1e-3)
+    assert record.invoice_vat == pytest.approx(0.0, rel=1e-3)
+    assert record.base_before_vat == pytest.approx(16.89, rel=1e-3)
+    assert record.vat_rate == pytest.approx(0.0, rel=1e-3)
+    assert record.category == "transportation"
+    assert record.category_rule and record.category_rule.startswith("vendor:")
+
+
 class _FakePage:
     def __init__(self, text, words):
         self._text = text

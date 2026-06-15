@@ -170,9 +170,9 @@ def test_graph_invoice_finder_september_2025(
     with report_path.open("r", encoding="utf-8") as fh:
         report = json.load(fh)
     assert [row["id"] for row in report["saved"]] == [msg_id for msg_id, _ in expected]
-    assert not report[
-        "rejected"
-    ], "No invoices should be rejected in the September baseline run."
+    assert not report["rejected"], (
+        "No invoices should be rejected in the September baseline run."
+    )
     assert _StubGraphClient.last_init.get("interactive_auth") is False
 
 
@@ -360,9 +360,9 @@ def test_graph_invoice_finder_cli_flags(
 
     with report_path.open("r", encoding="utf-8") as fh:
         report = json.load(fh)
-    assert any(
-        r.get("ok") is False for r in report["report"]
-    ), "quarantine entry expected in report"
+    assert any(r.get("ok") is False for r in report["report"]), (
+        "quarantine entry expected in report"
+    )
 
     assert _StubGraphClient.last_init.get("authority") == "common"
     assert _StubGraphClient.last_init.get("interactive_auth") is True
