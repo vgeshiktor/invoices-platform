@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt verify verify-python verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets run-gmail run-graph run-report run-monthly run-n8n quarantine
+.PHONY: setup dev up down test lint fmt verify verify-python verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets eval-cross-provider-dedup run-gmail run-graph run-report run-monthly run-n8n quarantine
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -61,6 +61,9 @@ verify-artifact-schemas:
 
 verify-generated-artifact-secrets:
 	$(PYTHON) scripts/check_generated_artifact_secrets.py
+
+eval-cross-provider-dedup:
+	$(PYTHON) scripts/eval_cross_provider_dedup.py
 
 PYTHON ?= python
 PYTHONPATH_EXTRA := apps/workers-py/src
