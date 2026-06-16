@@ -21,6 +21,7 @@ Monorepo for invoice discovery, PDF collection, and invoice reporting across Gma
 
 - `README.md` (this file): project overview + quick start + workflow map.
 - `docs/USAGE.md`: full command reference and how-to usage for all current functionality.
+- `docs/SECURITY-AND-DATA-HANDLING.md`: sensitive-data handling, token storage, logging, retention, and AI-evidence rules.
 - `AGENTS.md`: stable repo operating rules for AI-assisted work.
 - `PLANS.md`: current repo state, progress notes, and next-step guidance.
 - `.ai/README.md`: task-packet and eval contract for substantial AI-assisted work.
@@ -135,4 +136,4 @@ invoices-platform/
 ## Notes
 
 - `archive/` contains historical finder scripts kept for comparison/debugging. Current supported entry points are under `apps/workers-py/src/invplatform/cli`.
-- `docs/ONBOARDING.md`, `docs/ARCHITECTURE.md`, and `docs/CONTRIBUTING.md` are currently placeholders.
+- `docs/ONBOARDING.md` and `docs/CONTRIBUTING.md` are still placeholders. `docs/ARCHITECTURE.md` and `docs/SECURITY-AND-DATA-HANDLING.md` are repo-specific guidance.
