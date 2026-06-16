@@ -43,7 +43,14 @@ def test_cross_provider_dedup_eval_runner_is_runnable_and_non_destructive(tmp_pa
     }
 
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--fixture", str(FIXTURE_DIR), "--work-dir", str(tmp_path)],
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            str(FIXTURE_DIR),
+            "--work-dir",
+            str(tmp_path),
+        ],
         check=False,
         capture_output=True,
         text=True,
