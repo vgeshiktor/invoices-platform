@@ -70,7 +70,17 @@ verify-go:
 	cd apps/api-go && go test ./...
 
 verify-module-tidiness:
-	cd apps/api-go && go mod tidy -diff
+	@tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	cp -R apps/api-go/. "$$tmp_dir"/; \
+	(cd "$$tmp_dir" && go mod tidy); \
+	diff -u apps/api-go/go.mod "$$tmp_dir/go.mod"; \
+	if [ -f apps/api-go/go.sum ] && [ -f "$$tmp_dir/go.sum" ]; then \
+		diff -u apps/api-go/go.sum "$$tmp_dir/go.sum"; \
+	elif [ -f apps/api-go/go.sum ] || [ -f "$$tmp_dir/go.sum" ]; then \
+		echo "go mod tidy would change apps/api-go/go.sum"; \
+		exit 1; \
+	fi
 
 verify-artifact-schemas:
 	$(PYTHON) scripts/validate_artifact_schemas.py

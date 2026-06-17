@@ -28,7 +28,11 @@ def test_makefile_defines_verify_target_with_required_checks():
     assert "gofmt -l" in makefile
     assert "go vet ./..." in makefile
     assert "go test ./..." in makefile
-    assert "go mod tidy -diff" in makefile
+    assert "mktemp -d" in makefile
+    assert "cp -R apps/api-go/." in makefile
+    assert 'cd "$$tmp_dir" && go mod tidy' in makefile
+    assert 'diff -u apps/api-go/go.mod "$$tmp_dir/go.mod"' in makefile
+    assert "go mod tidy -diff" not in makefile
     assert "scripts/validate_artifact_schemas.py" in makefile
     assert "scripts/check_generated_artifact_secrets.py" in makefile
 

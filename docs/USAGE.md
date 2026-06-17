@@ -351,7 +351,7 @@ Canonical repo-root verification:
 make verify
 ```
 
-`make verify` runs the required Python and Go checks from the repository root, including `go mod tidy -diff`, and fails if verification changes the working tree.
+`make verify` runs the required Python and Go checks from the repository root, including a non-mutating Go module tidiness check, and fails if verification changes the working tree.
 
 Run all root tests:
 
