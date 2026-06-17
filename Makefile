@@ -36,7 +36,24 @@ fmt:
 	$(MAKE) -C apps/api-go fmt
 	$(MAKE) -C apps/workers-py fmt
 
-verify: verify-python verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets
+verify:
+	@set -e; \
+	before="$$(git status --porcelain=v1 --untracked-files=all)"; \
+	$(MAKE) verify-python; \
+	$(MAKE) verify-go; \
+	$(MAKE) verify-module-tidiness; \
+	$(MAKE) verify-artifact-schemas; \
+	$(MAKE) verify-generated-artifact-secrets; \
+	after="$$(git status --porcelain=v1 --untracked-files=all)"; \
+	if [ "$$before" != "$$after" ]; then \
+		echo "make verify modified the working tree; verification must be non-mutating."; \
+		echo "Run the required fix or generation step separately, then re-run make verify."; \
+		echo "--- before ---"; \
+		printf '%s\n' "$$before"; \
+		echo "--- after ---"; \
+		printf '%s\n' "$$after"; \
+		exit 1; \
+	fi
 
 verify-python:
 	ruff check apps/workers-py tests
@@ -53,8 +70,7 @@ verify-go:
 	cd apps/api-go && go test ./...
 
 verify-module-tidiness:
-	cd apps/api-go && go mod tidy
-	git diff --exit-code -- apps/api-go/go.mod apps/api-go/go.sum
+	cd apps/api-go && go mod tidy -diff
 
 verify-artifact-schemas:
 	$(PYTHON) scripts/validate_artifact_schemas.py
