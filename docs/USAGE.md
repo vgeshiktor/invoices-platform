@@ -345,6 +345,14 @@ Current endpoint:
 
 ## 11. Testing and Quality
 
+Canonical repo-root verification:
+
+```bash
+make verify
+```
+
+`make verify` runs the required Python and Go checks from the repository root, including a non-mutating Go module tidiness check, and fails if verification changes the working tree.
+
 Run all root tests:
 
 ```bash
