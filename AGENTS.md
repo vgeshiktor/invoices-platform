@@ -26,6 +26,14 @@ Use `.ai/` for task-scoped packets and evaluation inputs/results when work is su
   - targeted `pytest` when a change is docs-only or scoped to one workflow
 - Preserve the split between current behavior and future scope already used in `README.md` and `docs/USAGE.md`.
 
+## Agentic Engineering Defaults
+
+- Substantial work requires a task packet in `.ai/tasks/`; keep tiny, single-file edits lightweight unless the user asks for the packet.
+- Every new task packet must declare a working mode: `prototype` for exploration or `production` for changes intended to ship/shared workflows.
+- Before implementation begins, shipping changes must define the required tests and, when the task behaves like an agent/workflow review, the success criteria or eval rubric.
+- Review AI-generated code with equal or higher scrutiny than human-written code, especially around hallucinated dependencies, missing failure handling, and unsupported policy claims.
+- When an agent repeats a mistake, convert the lesson into a repo rule, template field, example, or test instead of relying on memory alone.
+
 ## AI Context Budget
 
 - Start with `README.md`, `docs/USAGE.md`, and the active task packet if present.
@@ -33,6 +41,16 @@ Use `.ai/` for task-scoped packets and evaluation inputs/results when work is su
 - Treat placeholder docs as low-priority context until they are expanded.
 - Prefer changed files and task-relevant tests over broad repo reads.
 - Maximum initial files for substantial work: 6, then expand only when the missing context is clear.
+
+## Lean-ctx Workflow
+
+- For every substantial repository task, start with `ctx_overview` using the current task description.
+- Use `ctx_tree` to confirm repo structure before broad exploration.
+- Use `ctx_search` before broad reads, then use `ctx_read` or `ctx_multi_read` for file access.
+- Route tests, builds, `git`, logs, and other output-heavy commands through `ctx_shell` or `lean-ctx -c "<command>"`.
+- Use raw or native shell/file reads only when exact uncompressed output is required or lean-ctx is unavailable.
+- If a lean-ctx dashboard or observability command fails, treat it as an upstream tooling issue rather than a repo-policy exception.
+- If compression hooks need to be bypassed temporarily for debugging, use `lean-ctx-off`, then return to the lean-ctx-first workflow for normal repo tasks.
 
 ## `.ai/` Usage
 

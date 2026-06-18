@@ -13,12 +13,18 @@ tasks:
 legacy_review_templates:
   - id: docs-usage-report-example
     name: Update report-generation examples in docs
+    mode: prototype
     reasoning_level: ai:light
     scope: docs/how-to alignment for invoice report CLI examples and output paths
     source_of_truth:
       - README.md
       - docs/USAGE.md
       - Makefile
+    rubric:
+      - examples match current command behavior
+      - product-code scope stays unchanged
+      - docs preserve quick-start vs detailed-usage split
+    ship_gate: docs-only alignment with no invented behavior
     required_validation:
       - Confirm command examples match current `make run-report` behavior.
       - Confirm no product code files changed.
@@ -28,6 +34,7 @@ legacy_review_templates:
 
   - id: readme-governance-discovery
     name: Add minimal discoverability links for repo governance files
+    mode: prototype
     reasoning_level: ai:light
     scope: README documentation map alignment for repo-level working guidance
     source_of_truth:
@@ -35,6 +42,11 @@ legacy_review_templates:
       - AGENTS.md
       - PLANS.md
       - .ai/README.md
+    rubric:
+      - governance links resolve to real repo paths
+      - README stays discoverability-focused
+      - no unsupported workflow policy is introduced
+    ship_gate: discoverability-only changes with no new process claims
     required_validation:
       - Confirm all linked governance paths exist.
       - Confirm README changes stay discoverability-only.
@@ -44,12 +56,18 @@ legacy_review_templates:
 
   - id: cli-monthly-runbook-check
     name: Review monthly orchestration runbook consistency
+    mode: production
     reasoning_level: ai:standard
     scope: docs and workflow consistency across monthly CLI examples, token-cache guidance, and local scheduler notes
     source_of_truth:
       - docs/USAGE.md
       - README.md
       - Makefile
+    rubric:
+      - command examples match current Makefile variables
+      - auth/bootstrap guidance stays internally consistent
+      - scheduler notes do not promise unsupported behavior
+    ship_gate: documented monthly workflow must be runnable from current repo surfaces
     required_validation:
       - Compare `run-monthly` examples against current Makefile variables.
       - Verify scheduler notes do not conflict with documented auth flow.
@@ -59,6 +77,7 @@ legacy_review_templates:
 
   - id: report-validation-surface-review
     name: Validate report-generation workflow documentation against current outputs
+    mode: production
     reasoning_level: ai:standard
     scope: docs and validation coverage for JSON, CSV, summary CSV, and PDF report outputs
     source_of_truth:
@@ -66,6 +85,11 @@ legacy_review_templates:
       - docs/USAGE.md
       - tests/test_invoices_report.py
       - tests/test_invoices_report_utils.py
+    rubric:
+      - outputs and flags match implemented report behavior
+      - validation commands map to real report surfaces
+      - no future/planned behavior is presented as implemented
+    ship_gate: report docs must describe only current outputs and flags
     required_validation:
       - Check output names and flags against tests and CLI docs.
       - Run targeted tests if behavior documentation changes materially.
@@ -75,6 +99,7 @@ legacy_review_templates:
 
   - id: local-stack-docs-fit
     name: Align local stack documentation with current dev commands
+    mode: production
     reasoning_level: ai:standard
     scope: local Docker Compose, n8n, api-go, and workers-py onboarding guidance
     source_of_truth:
@@ -82,6 +107,11 @@ legacy_review_templates:
       - docs/USAGE.md
       - Makefile
       - deploy/compose/docker-compose.dev.yml
+    rubric:
+      - documented services match current stack files
+      - commands remain runnable as written
+      - future API scope stays clearly separated from current behavior
+    ship_gate: local-stack docs cannot claim unsupported services or endpoints
     required_validation:
       - Confirm documented `make dev`, `make up`, `make run-n8n`, and API references match current stack files.
       - Confirm no unsupported services are described as implemented.
@@ -91,6 +121,7 @@ legacy_review_templates:
 
   - id: auth-token-flow-review
     name: Review Gmail and Graph token-handling guidance
+    mode: production
     reasoning_level: ai:deep
     scope: auth/bootstrap/runbook review across Gmail OAuth files, Graph interactive auth, cache reuse, and unattended exits
     source_of_truth:
@@ -99,6 +130,11 @@ legacy_review_templates:
       - Makefile
       - apps/workers-py/src/invplatform/cli/graph_invoice_finder.py
       - tests/test_graph_invoice_auth.py
+    rubric:
+      - Graph auth flags and cache behavior match code and tests
+      - Gmail credential guidance reflects implemented expectations
+      - bootstrap and unattended flows are clearly separated
+    ship_gate: auth docs must not invent token behavior or recovery flows
     required_validation:
       - Verify documented Graph auth flags and cache behavior against code and tests.
       - Verify Gmail credential-file guidance matches implemented expectations.
@@ -108,6 +144,7 @@ legacy_review_templates:
 
   - id: command-surface-governance-pass
     name: Audit repo command surfaces and source-of-truth order
+    mode: production
     reasoning_level: ai:deep
     scope: governance review of which docs and commands should be treated as authoritative for day-to-day work
     source_of_truth:
@@ -117,6 +154,11 @@ legacy_review_templates:
       - Makefile
       - pytest.ini
       - requirements.txt
+    rubric:
+      - source-of-truth order matches actual repo usage
+      - validation guidance references real commands only
+      - stable rules and current-state notes remain clearly separated
+    ship_gate: governance guidance must stay minimal, accurate, and repo-backed
     required_validation:
       - Confirm source-of-truth order matches actual repo usage.
       - Confirm validation guidance references real commands only.
@@ -124,8 +166,32 @@ legacy_review_templates:
       - Repo-owned guidance is minimal, accurate, and practical.
       - Stable rules and project-state tracking stay clearly separated.
 
+  - id: lean-ctx-governance-review
+    name: Review lean-ctx routing guidance and fallback rules
+    mode: production
+    reasoning_level: ai:review
+    scope: docs-and-contract review of lean-ctx-first workflow expectations for substantial repo tasks
+    source_of_truth:
+      - AGENTS.md
+      - .ai/README.md
+      - .ai/task-packet-template.md
+      - .ai/evals/tasks.yaml
+      - tests/test_repo_verify_contract.py
+    rubric:
+      - "`ctx_overview`, `ctx_tree`, `ctx_search`, `ctx_read`, and compressed shell routing remain documented"
+      - "fallback guidance stays explicit without weakening normal `ctx_*` usage"
+      - contract coverage remains telemetry-free and discoverable
+    ship_gate: lean-ctx-first policy must remain explicit in docs and contract tests
+    required_validation:
+      - "Check that `ctx_overview`, `ctx_tree`, `ctx_search`, `ctx_read`, and compressed shell routing remain documented in the repo guidance."
+      - "Check that fallback guidance covers raw/native access and upstream dashboard failures without weakening normal lean-ctx usage."
+    success_criteria:
+      - Repo guidance keeps lean-ctx-first workflow explicit and discoverable.
+      - Contract coverage protects the policy without introducing telemetry or CI enforcement of real command history.
+
   - id: pull-request-workflow-review
     name: Review a docs-and-workflow pull request for accuracy and risk
+    mode: production
     reasoning_level: ai:review
     scope: code review focused on docs regressions, broken commands, missing validation, and invented governance policy
     source_of_truth:
@@ -134,6 +200,11 @@ legacy_review_templates:
       - AGENTS.md
       - PLANS.md
       - Makefile
+    rubric:
+      - findings prioritize real regressions over polish
+      - cited commands and policies are supported by repo files
+      - review output separates blocking issues from optional cleanup
+    ship_gate: no merge-ready review without checking docs claims against repo truth
     required_validation:
       - Inspect changed files and cited commands.
       - Flag any policy or behavior claims not supported by repo files.
@@ -143,6 +214,7 @@ legacy_review_templates:
 
   - id: workflow-change-review
     name: Review a CLI workflow change touching docs, commands, and tests
+    mode: production
     reasoning_level: ai:review
     scope: review of command-surface changes affecting contributor workflows or report-validation paths
     source_of_truth:
@@ -150,12 +222,42 @@ legacy_review_templates:
       - docs/USAGE.md
       - pytest.ini
       - tests/
+    rubric:
+      - command examples still line up with implementation
+      - validation guidance stays current
+      - tests cover the changed workflow surface or the gap is called out
+    ship_gate: workflow changes must keep docs, commands, and tests aligned
     required_validation:
       - Check that command examples and validation still line up after the diff.
       - Check for missing or outdated test guidance.
     success_criteria:
       - Review catches workflow regressions before merge.
       - Validation expectations remain explicit and runnable.
+
+  - id: agentic-alignment-governance-review
+    name: Review repo-level agentic-governance alignment for drift and missing gates
+    mode: production
+    reasoning_level: ai:review
+    scope: governance review of agentic-engineering artifacts across repo rules, task packets, eval templates, and repo contract tests
+    source_of_truth:
+      - AGENTS.md
+      - PLANS.md
+      - .ai/README.md
+      - .ai/task-packet-template.md
+      - .ai/evals/tasks.yaml
+      - tests/test_repo_verify_contract.py
+    rubric:
+      - substantial-work rules require task packets and working mode declarations
+      - review templates define explicit rubrics and ship gates
+      - docs, templates, and tests do not drift or make unsupported policy claims
+    ship_gate: shared governance changes must preserve review gates and repo-backed policy claims
+    required_validation:
+      - Check that agentic-governance docs and templates agree on prototype vs production expectations.
+      - Check that repo contract tests protect the documented governance fields.
+      - Flag unsupported policy claims, missing review gates, or doc/test drift.
+    success_criteria:
+      - Governance artifacts behave like maintained repo assets rather than loose notes.
+      - Review output highlights policy drift before shared workflow changes ship.
 
 p1_after_first_hardening_pr:
   - Add property-based tests for deduplication, date intervals, and monetary calculations.
