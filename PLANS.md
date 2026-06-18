@@ -34,3 +34,14 @@
   - aligned local-stack guidance with actual `make dev` / `make up` / `make down` / `make run-n8n` behavior
   - corrected the root env example to use the implemented `GRAPH_CLIENT_ID` variable name
   - kept review-oriented eval tasks as invocation-only templates rather than treating them as open milestones
+- `2026-06-18`: hardened lean-ctx governance after observing strong `ctx_read` adoption but weaker shell-routing discipline:
+  - updated `AGENTS.md` and `.ai/README.md` to make lean-ctx-first routing explicit for substantial repo work
+  - expanded `.ai/task-packet-template.md` with overview, search, and compressed-shell planning checkpoints
+  - added a reusable eval template plus contract-test coverage so the lean-ctx workflow remains discoverable and hard to regress
+- `2026-06-18`: aligned repo governance with the Day 1 agentic-engineering guidance at the workflow layer:
+  - treated `AGENTS.md`, `.ai/tasks/`, `.ai/evals/tasks.yaml`, and repo contract tests as maintained governance assets
+  - added explicit prototype vs production planning fields plus AI-specific review expectations for substantial work
+  - normalized review templates with structured rubric and ship-gate metadata
+  - intentionally deferred deeper runtime observability, traces, and model-routing work until the repo needs more than governance hardening
+
+---

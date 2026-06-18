@@ -16,6 +16,23 @@
 - Use a task packet for substantial multi-file changes, workflow reviews, or validation-heavy work.
 - Skip task-packet overhead for tiny, single-file, low-risk edits unless the user asks for one.
 
+## Harness Map
+
+- Instructions and guardrails: `AGENTS.md`
+- Current-state memory: `PLANS.md`
+- Task memory and spec: `.ai/tasks/`
+- Eval contracts: `.ai/evals/tasks.yaml`
+- Validation tools and contract checks: `Makefile` and `tests/`
+
+## Lean-ctx-First Workflow
+
+- Follow `AGENTS.md` as the canonical lean-ctx policy for substantial AI-assisted work.
+- Start with `ctx_overview`, then use `ctx_tree` plus `ctx_search` before broad reads.
+- Use `ctx_read` or `ctx_multi_read` for repo file access.
+- Route tests, builds, `git`, and log-heavy commands through `ctx_shell` or `lean-ctx -c "<command>"`.
+- If raw/native access is necessary, record the reason in the task packet instead of silently bypassing lean-ctx.
+- If a dashboard command such as `lean-ctx gain --deep` fails, keep the normal `ctx_*` workflow and treat the failure as an upstream tooling issue unless repo work is blocked.
+
 ## Guardrails
 
 - Keep task packets short and anchored to real repo files.
