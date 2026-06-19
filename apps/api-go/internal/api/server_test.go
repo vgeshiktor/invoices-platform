@@ -164,6 +164,42 @@ func TestCollectionJobFailurePersistsErrorAndSupportsRetry(t *testing.T) {
 	}
 }
 
+func TestReportRunPersistsArtifactsAndTotals(t *testing.T) {
+	server := NewServer(
+		WithReportRunner(fakeReportRunner{
+			result: ReportRunResult{
+				Status: "ready",
+				Artifacts: []ReportArtifact{
+					{Format: "json", Path: "/tmp/invoice_report.json"},
+					{Format: "pdf", Path: "/tmp/invoice_report.pdf"},
+				},
+				Totals: &ReportTotals{NetTotal: 100, VATTotal: 17, GrossTotal: 117},
+			},
+		}),
+	)
+	cookie := loginForTest(t, server)
+
+	payload, _ := json.Marshal(ReportCreateRequest{
+		InputDir: "invoices/invoices_06_2026",
+		Formats:  []string{"json", "pdf"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/reports", bytes.NewReader(payload))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected create 201, got %d", rec.Code)
+	}
+	var report Report
+	if err := json.NewDecoder(rec.Body).Decode(&report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if report.Status != "ready" || report.Totals == nil || len(report.Artifacts) != 2 {
+		t.Fatalf("expected ready report with artifacts/totals, got %#v", report)
+	}
+}
+
 func loginForTest(t *testing.T, server *Server) *http.Cookie {
 	t.Helper()
 
@@ -186,6 +222,18 @@ type fakeCollectionRunner struct {
 }
 
 func (f fakeCollectionRunner) RunCollectionJob(_ context.Context, _ CollectionRunRequest) (CollectionRunResult, error) {
+	if f.err != "" {
+		return f.result, errors.New(f.err)
+	}
+	return f.result, nil
+}
+
+type fakeReportRunner struct {
+	result ReportRunResult
+	err    string
+}
+
+func (f fakeReportRunner) RunReport(_ context.Context, _ ReportRunRequest) (ReportRunResult, error) {
 	if f.err != "" {
 		return f.result, errors.New(f.err)
 	}

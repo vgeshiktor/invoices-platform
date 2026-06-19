@@ -48,8 +48,17 @@ func main() {
 		MonthlyGmailArgs:    strings.TrimSpace(os.Getenv("MONTHLY_GMAIL_ARGS")),
 		MonthlyGraphArgs:    strings.TrimSpace(os.Getenv("MONTHLY_GRAPH_ARGS")),
 	})
+	reportRunner := runtime.NewSubprocessReportRunner(runtime.ReportRunnerConfig{
+		WorkspaceRoot:    workspaceRoot,
+		WorkerPythonPath: filepath.Join(workspaceRoot, "apps", "workers-py", "src"),
+		FilesDir:         strings.TrimSpace(os.Getenv("FILES_DIR")),
+	})
 
-	server := api.NewServer(api.WithStore(store), api.WithCollectionRunner(runner))
+	server := api.NewServer(
+		api.WithStore(store),
+		api.WithCollectionRunner(runner),
+		api.WithReportRunner(reportRunner),
+	)
 	log.Printf("api-go listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, server.Handler()))
 }

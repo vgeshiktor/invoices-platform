@@ -1,4 +1,4 @@
-.PHONY: setup dev up down test lint fmt verify verify-python verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets eval-cross-provider-dedup run-gmail run-graph run-report run-monthly run-n8n quarantine
+.PHONY: setup dev up down test lint fmt verify verify-python verify-web verify-go verify-module-tidiness verify-artifact-schemas verify-generated-artifact-secrets eval-cross-provider-dedup run-gmail run-graph run-report run-monthly run-n8n quarantine
 
 setup: ## התקנות ראשוניות
 	pre-commit install
@@ -31,15 +31,18 @@ test:
 lint:
 	$(MAKE) -C apps/api-go lint
 	$(MAKE) -C apps/workers-py lint
+	npm --prefix apps/web run lint
 
 fmt:
 	$(MAKE) -C apps/api-go fmt
 	$(MAKE) -C apps/workers-py fmt
+	npm --prefix apps/web run format:write
 
 verify:
 	@set -e; \
 	before="$$(git status --porcelain=v1 --untracked-files=all)"; \
 	$(MAKE) verify-python; \
+	$(MAKE) verify-web; \
 	$(MAKE) verify-go; \
 	$(MAKE) verify-module-tidiness; \
 	$(MAKE) verify-artifact-schemas; \
@@ -59,6 +62,9 @@ verify-python:
 	ruff check apps/workers-py tests
 	ruff format --check apps/workers-py tests
 	PYTHONPATH=$(PYTHONPATH_EXTRA):$$PYTHONPATH $(PYTHON) -m pytest -q tests
+
+verify-web:
+	npm --prefix apps/web run verify
 
 verify-go:
 	@unformatted="$$(cd apps/api-go && gofmt -l .)"; \

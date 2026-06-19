@@ -17,3 +17,11 @@ func WithCollectionRunner(runner CollectionRunner) Option {
 		}
 	}
 }
+
+func WithReportRunner(runner ReportRunner) Option {
+	return func(server *Server) {
+		if runner != nil {
+			server.reportRunner = runner
+		}
+	}
+}
