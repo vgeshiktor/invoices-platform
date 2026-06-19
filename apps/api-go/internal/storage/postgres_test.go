@@ -118,15 +118,19 @@ func TestPostgresStorePersistsTenantScopedResources(t *testing.T) {
 	}
 
 	job := api.CollectionJob{
-		ID:        "job-1",
-		TenantID:  "tenant-a",
-		Status:    "queued",
-		Providers: []string{"gmail", "outlook"},
-		Month:     6,
-		Year:      2026,
-		RequestID: "req-1",
-		CreatedAt: nowRFC3339(),
-		UpdatedAt: nowRFC3339(),
+		ID:              "job-1",
+		TenantID:        "tenant-a",
+		Status:          "queued",
+		Providers:       []string{"gmail", "outlook"},
+		Month:           6,
+		Year:            2026,
+		GraphClientID:   "graph-client",
+		GraphAuthority:  "consumers",
+		GraphTokenCache: ".cache/msal.bin",
+		InteractiveAuth: true,
+		RequestID:       "req-1",
+		CreatedAt:       nowRFC3339(),
+		UpdatedAt:       nowRFC3339(),
 	}
 	if err := store.CreateCollectionJob(ctx, job); err != nil {
 		t.Fatalf("create collection job: %v", err)
@@ -141,7 +145,7 @@ func TestPostgresStorePersistsTenantScopedResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get collection job: %v", err)
 	}
-	if gotJob.Status != "running" || gotJob.StartedAt == "" {
+	if gotJob.Status != "running" || gotJob.StartedAt == "" || gotJob.GraphClientID != "graph-client" || !gotJob.InteractiveAuth {
 		t.Fatalf("unexpected collection job: %#v", gotJob)
 	}
 
