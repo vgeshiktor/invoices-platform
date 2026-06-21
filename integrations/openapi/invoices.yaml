@@ -1,25 +1,1031 @@
 openapi: 3.0.3
 info:
-  title: Invoices API
-  version: 0.1.0
+  title: Invoices Control Plane API
+  version: 0.2.0
+  description: |
+    Control-plane contract for the invoice platform SaaS surfaces. The repo still
+    contains the Python worker pipelines for invoice discovery and reporting; this
+    contract focuses on the Go HTTP API and the React frontend that orchestrate them.
+servers:
+  - url: http://127.0.0.1:8080
+tags:
+  - name: Auth
+  - name: Providers
+  - name: Collection Jobs
+  - name: Reports
+  - name: Schedules
+  - name: Audit
 paths:
-  /invoices:
+  /healthz:
     get:
-      summary: List invoices
+      tags: [Auth]
+      operationId: getHealthz
+      summary: Health check
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /auth/login:
     post:
-      summary: Create invoice
+      tags: [Auth]
+      operationId: login
+      summary: Create a tenant-scoped session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Clear the current session
+      responses:
+        '200':
+          description: Session cleared
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      summary: Refresh the current session
+      responses:
+        '200':
+          description: Session refreshed
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentUser
+      summary: Get the current user context
+      responses:
+        '200':
+          description: Authenticated user context
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/provider-configs:
+    get:
+      tags: [Providers]
+      operationId: listProviderConfigs
+      summary: List provider configurations
+      responses:
+        '200':
+          description: Provider configurations
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfigList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Providers]
+      operationId: createProviderConfig
+      summary: Create or connect a provider configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConfigCreateRequest'
       responses:
         '201':
-          description: Created
-  /invoices/{id}:
+          description: Provider configuration created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/provider-configs/{providerConfigId}:
     get:
-      summary: Get invoice
+      tags: [Providers]
+      operationId: getProviderConfig
+      summary: Get one provider configuration
+      parameters:
+        - $ref: '#/components/parameters/ProviderConfigID'
       responses:
-        '200': { description: OK }
+        '200':
+          description: Provider configuration
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
     patch:
-      summary: Update invoice
+      tags: [Providers]
+      operationId: updateProviderConfig
+      summary: Update provider metadata or connection state
+      parameters:
+        - $ref: '#/components/parameters/ProviderConfigID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderConfigUpdateRequest'
       responses:
-        '200': { description: OK }
+        '200':
+          description: Provider configuration updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/provider-configs/{providerConfigId}/oauth/start:
+    post:
+      tags: [Providers]
+      operationId: startProviderOAuth
+      summary: Start a provider OAuth flow
+      parameters:
+        - $ref: '#/components/parameters/ProviderConfigID'
+      responses:
+        '200':
+          description: OAuth flow metadata
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthFlowResponse'
+  /v1/provider-configs/{providerConfigId}/oauth/callback:
+    post:
+      tags: [Providers]
+      operationId: completeProviderOAuth
+      summary: Complete a provider OAuth flow
+      parameters:
+        - $ref: '#/components/parameters/ProviderConfigID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthCallbackRequest'
+      responses:
+        '200':
+          description: Provider connected
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+  /v1/provider-configs/{providerConfigId}/oauth/refresh:
+    post:
+      tags: [Providers]
+      operationId: refreshProviderOAuth
+      summary: Refresh provider OAuth metadata
+      parameters:
+        - $ref: '#/components/parameters/ProviderConfigID'
+      responses:
+        '200':
+          description: Provider refreshed
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+  /v1/provider-configs/{providerConfigId}/oauth/revoke:
+    post:
+      tags: [Providers]
+      operationId: revokeProviderOAuth
+      summary: Revoke provider access
+      parameters:
+        - $ref: '#/components/parameters/ProviderConfigID'
+      responses:
+        '200':
+          description: Provider revoked
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+  /v1/collection-jobs:
+    get:
+      tags: [Collection Jobs]
+      operationId: listCollectionJobs
+      summary: List collection jobs
+      responses:
+        '200':
+          description: Collection jobs
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionJobList'
+    post:
+      tags: [Collection Jobs]
+      operationId: createCollectionJob
+      summary: Start a collection job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionJobCreateRequest'
+      responses:
+        '201':
+          description: Collection job created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionJob'
+  /v1/collection-jobs/{collectionJobId}:
+    get:
+      tags: [Collection Jobs]
+      operationId: getCollectionJob
+      summary: Get one collection job
+      parameters:
+        - $ref: '#/components/parameters/CollectionJobID'
+      responses:
+        '200':
+          description: Collection job
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/collection-jobs/{collectionJobId}/retry:
+    post:
+      tags: [Collection Jobs]
+      operationId: retryCollectionJob
+      summary: Retry a failed collection job
+      parameters:
+        - $ref: '#/components/parameters/CollectionJobID'
+      responses:
+        '201':
+          description: Retry job created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionJob'
+  /v1/reports:
+    get:
+      tags: [Reports]
+      operationId: listReports
+      summary: List reports
+      responses:
+        '200':
+          description: Reports
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportList'
+    post:
+      tags: [Reports]
+      operationId: createReport
+      summary: Create a report request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreateRequest'
+      responses:
+        '201':
+          description: Report created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+  /v1/reports/{reportId}:
+    get:
+      tags: [Reports]
+      operationId: getReport
+      summary: Get one report
+      parameters:
+        - $ref: '#/components/parameters/ReportID'
+      responses:
+        '200':
+          description: Report detail
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/reports/{reportId}/artifacts/{artifactFormat}:
+    get:
+      tags: [Reports]
+      operationId: getReportArtifact
+      summary: Get one report artifact URL
+      parameters:
+        - $ref: '#/components/parameters/ReportID'
+        - $ref: '#/components/parameters/ArtifactFormat'
+      responses:
+        '200':
+          description: Artifact metadata
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportArtifact'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/schedules:
+    get:
+      tags: [Schedules]
+      operationId: listSchedules
+      summary: List schedules
+      responses:
+        '200':
+          description: Schedules
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleList'
+    post:
+      tags: [Schedules]
+      operationId: createSchedule
+      summary: Create a schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleCreateRequest'
+      responses:
+        '201':
+          description: Schedule created
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+  /v1/schedules/{scheduleId}:
+    get:
+      tags: [Schedules]
+      operationId: getSchedule
+      summary: Get one schedule
+      parameters:
+        - $ref: '#/components/parameters/ScheduleID'
+      responses:
+        '200':
+          description: Schedule detail
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Schedules]
+      operationId: updateSchedule
+      summary: Update a schedule
+      parameters:
+        - $ref: '#/components/parameters/ScheduleID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleUpdateRequest'
+      responses:
+        '200':
+          description: Schedule updated
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/schedules/{scheduleId}/pause:
+    post:
+      tags: [Schedules]
+      operationId: pauseSchedule
+      summary: Pause a schedule
+      parameters:
+        - $ref: '#/components/parameters/ScheduleID'
+      responses:
+        '200':
+          description: Schedule paused
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/schedules/{scheduleId}/resume:
+    post:
+      tags: [Schedules]
+      operationId: resumeSchedule
+      summary: Resume a schedule
+      parameters:
+        - $ref: '#/components/parameters/ScheduleID'
+      responses:
+        '200':
+          description: Schedule resumed
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/audit-events:
+    get:
+      tags: [Audit]
+      operationId: listAuditEvents
+      summary: List tenant audit events
+      parameters:
+        - in: query
+          name: entityType
+          schema:
+            type: string
+        - in: query
+          name: entityId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit events
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/XRequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventList'
+components:
+  headers:
+    XRequestID:
+      description: Correlation identifier for tracing and support
+      schema:
+        type: string
+  parameters:
+    ProviderConfigID:
+      in: path
+      name: providerConfigId
+      required: true
+      schema:
+        type: string
+    CollectionJobID:
+      in: path
+      name: collectionJobId
+      required: true
+      schema:
+        type: string
+    ReportID:
+      in: path
+      name: reportId
+      required: true
+      schema:
+        type: string
+    ScheduleID:
+      in: path
+      name: scheduleId
+      required: true
+      schema:
+        type: string
+    ArtifactFormat:
+      in: path
+      name: artifactFormat
+      required: true
+      schema:
+        $ref: '#/components/schemas/ReportFormat'
+  responses:
+    Unauthorized:
+      description: Missing or invalid session
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, tenantId]
+      properties:
+        email:
+          type: string
+          format: email
+        tenantId:
+          type: string
+        displayName:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    AuthResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+    User:
+      type: object
+      required: [id, email, displayName, tenantId, permissions]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        tenantId:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    ProviderType:
+      type: string
+      enum: [gmail, outlook]
+    ProviderConnectionState:
+      type: string
+      enum: [connected, disconnected, expiring, error]
+    ProviderConfig:
+      type: object
+      required:
+        - id
+        - tenantId
+        - provider
+        - state
+        - connected
+        - scopes
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        provider:
+          $ref: '#/components/schemas/ProviderType'
+        state:
+          $ref: '#/components/schemas/ProviderConnectionState'
+        connected:
+          type: boolean
+        accountEmail:
+          type: string
+          format: email
+        health:
+          type: string
+        lastSyncAt:
+          type: string
+          format: date-time
+        scopes:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProviderConfigList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderConfig'
+    ProviderConfigCreateRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderType'
+        accountEmail:
+          type: string
+          format: email
+        scopes:
+          type: array
+          items:
+            type: string
+    ProviderConfigUpdateRequest:
+      type: object
+      properties:
+        accountEmail:
+          type: string
+          format: email
+        health:
+          type: string
+        state:
+          $ref: '#/components/schemas/ProviderConnectionState'
+        lastSyncAt:
+          type: string
+          format: date-time
+    OAuthFlowResponse:
+      type: object
+      required: [authorizationUrl, state]
+      properties:
+        authorizationUrl:
+          type: string
+        state:
+          type: string
+        providerConfig:
+          $ref: '#/components/schemas/ProviderConfig'
+    OAuthCallbackRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        state:
+          type: string
+    CollectionJobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    CollectionJob:
+      type: object
+      required:
+        - id
+        - tenantId
+        - status
+        - providers
+        - month
+        - year
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        status:
+          $ref: '#/components/schemas/CollectionJobStatus'
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderType'
+        month:
+          type: integer
+        year:
+          type: integer
+        requestId:
+          type: string
+        runSummaryPath:
+          type: string
+        invoicesDir:
+          type: string
+        retryOf:
+          type: string
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CollectionJobList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionJob'
+    CollectionJobCreateRequest:
+      type: object
+      required: [providers, month, year]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderType'
+        month:
+          type: integer
+        year:
+          type: integer
+        graphClientId:
+          type: string
+        graphAuthority:
+          type: string
+        graphTokenCachePath:
+          type: string
+        interactiveAuth:
+          type: boolean
+    ReportFormat:
+      type: string
+      enum: [json, csv, summary_csv, pdf]
+    ReportStatus:
+      type: string
+      enum: [queued, running, ready, failed]
+    ReportArtifact:
+      type: object
+      required: [format, path]
+      properties:
+        format:
+          $ref: '#/components/schemas/ReportFormat'
+        path:
+          type: string
+    Report:
+      type: object
+      required:
+        - id
+        - tenantId
+        - status
+        - inputDir
+        - formats
+        - artifacts
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        status:
+          $ref: '#/components/schemas/ReportStatus'
+        inputDir:
+          type: string
+        formats:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportFormat'
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportArtifact'
+        totals:
+          $ref: '#/components/schemas/ReportTotals'
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ReportList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Report'
+    ReportTotals:
+      type: object
+      properties:
+        netTotal:
+          type: number
+        vatTotal:
+          type: number
+        grossTotal:
+          type: number
+    ReportCreateRequest:
+      type: object
+      required: [inputDir, formats]
+      properties:
+        inputDir:
+          type: string
+        formats:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportFormat'
+        jsonOutput:
+          type: string
+        csvOutput:
+          type: string
+        summaryCsvOutput:
+          type: string
+        pdfOutput:
+          type: string
+    ScheduleStatus:
+      type: string
+      enum: [active, paused]
+    Schedule:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - timezone
+        - cron
+        - providers
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        timezone:
+          type: string
+        cron:
+          type: string
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderType'
+        status:
+          $ref: '#/components/schemas/ScheduleStatus'
+        nextRunAt:
+          type: string
+          format: date-time
+        lastRunAt:
+          type: string
+          format: date-time
+        lastRunStatus:
+          $ref: '#/components/schemas/CollectionJobStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ScheduleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Schedule'
+    ScheduleCreateRequest:
+      type: object
+      required: [name, timezone, cron, providers]
+      properties:
+        name:
+          type: string
+        timezone:
+          type: string
+        cron:
+          type: string
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderType'
+    ScheduleUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        timezone:
+          type: string
+        cron:
+          type: string
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderType'
+        nextRunAt:
+          type: string
+          format: date-time
+    AuditEvent:
+      type: object
+      required:
+        - id
+        - tenantId
+        - action
+        - entityType
+        - entityId
+        - requestId
+        - createdAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        action:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        requestId:
+          type: string
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AuditEventList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'

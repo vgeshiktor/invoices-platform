@@ -14,7 +14,7 @@ Monorepo for invoice discovery, PDF collection, and invoice reporting across Gma
   - vendor grouping and optional vendor subtotal rows
   - configurable subtotal behavior (on/off, skip single-invoice vendors)
 - Duplicate removal utility script (`scripts/remove_duplicate_invoices.py`)
-- Minimal Go API service (`/healthz`) in `apps/api-go`
+- Minimal Go API health surface in `apps/api-go`
 - Local dev stack via Docker Compose including `api-go`, `workers-py`, `db`, `mq`, and `n8n`
 
 ## Documentation Map
@@ -27,7 +27,10 @@ Monorepo for invoice discovery, PDF collection, and invoice reporting across Gma
 - `.ai/README.md`: task-packet and eval contract for substantial AI-assisted work.
 - `docs/UX_REVIEW_METHOD.md`: journey-first UX review standard for product screens, prototypes, and design feedback.
 - `docs/META_BILLING_GRAPH_API_EXPLORER.md`: ready-to-paste Graph API Explorer URLs for Meta billing diagnostics.
-- `integrations/openapi/invoices.yaml`: API contract draft (broader than currently implemented Go handlers).
+- `docs/FRONTEND_GITHUB_ISSUES.md`: repo-backed copy of the GitHub Weeks 1-10 frontend/control-plane backlog.
+- `docs/FRONTEND_TELEMETRY.md`: frontend telemetry taxonomy and request-correlation conventions.
+- `docs/FRONTEND_RELEASE_CHECKLIST.md`: release-readiness and rollback baseline for the frontend/control-plane surfaces.
+- `integrations/openapi/invoices.yaml`: source-of-truth control-plane OpenAPI contract for the Weeks 1-10 roadmap, including the current `GET /healthz` surface.
 
 ## Documentation Approach
 
@@ -94,6 +97,9 @@ make dev
 make up
 make down
 make run-n8n
+
+# Minimal Go API health surface
+make -C apps/api-go run
 ```
 
 For complete options and examples, use `docs/USAGE.md`.
@@ -113,9 +119,18 @@ For complete options and examples, use `docs/USAGE.md`.
 ## API Status (Current)
 
 - Implemented in Go:
-  - `GET /healthz` -> `200 ok`
-- Not yet implemented in current Go handler:
-  - the full invoice CRUD suggested by `integrations/openapi/invoices.yaml`
+  - `GET /healthz`
+- Planned and documented for the Weeks 1-10 roadmap:
+  - auth/session surfaces
+  - provider configuration and OAuth flows
+  - collection jobs
+  - reports and artifacts
+  - schedules
+  - audit events
+- Current backend/runtime notes:
+  - the Go API in `main` is still a minimal health-check baseline
+  - `integrations/openapi/invoices.yaml` tracks the target control-plane contract
+  - Python worker CLIs remain the source of truth for invoice discovery and report generation workflows
 
 ## Repo Layout
 

@@ -5,14 +5,21 @@
 - Purpose: support invoice discovery, PDF collection, monthly orchestration, and report generation across Gmail and Microsoft Graph.
 - Stable orientation lives in `README.md` and `docs/USAGE.md`.
 - Contributor/governance docs were previously missing or placeholder-level.
+- Live GitHub milestones `Week 1` through `Week 10` are now treated as the authoritative SaaS/control-plane backlog.
+- The checked-in repo still reflects the earlier CLI/reporting baseline and does not yet contain the planned frontend workspace or control-plane APIs.
 
 ## Immediate Next Recommended Step
 
-- No open non-review eval backlog remains. Treat the two review-oriented eval tasks as on-demand templates for future PR or workflow diffs, not standing milestones.
+- Implement the roadmap baseline for Weeks 1-10:
+  - recover the GitHub issue spec into repo docs
+  - expand the OpenAPI contract
+  - add `apps/web`
+  - replace the Go `/healthz` stub with a control-plane API baseline
 
 ## Open TBDs
 
-- None currently.
+- Persistence/storage backend for the new control-plane surfaces beyond the initial in-memory baseline.
+- Runtime strategy for long-running collection/report jobs in non-dev deployments.
 
 ## Progress Update
 
@@ -43,10 +50,13 @@
   - added explicit prototype vs production planning fields plus AI-specific review expectations for substantial work
   - normalized review templates with structured rubric and ship-gate metadata
   - intentionally deferred deeper runtime observability, traces, and model-routing work until the repo needs more than governance hardening
+- `2026-06-19`: reconciled repo planning with the live GitHub roadmap:
+  - validated that Milestones `Week 1` through `Week 10` remain open in GitHub
+  - confirmed the repo lacks the referenced frontend/control-plane implementation surfaces
+  - promoted the GitHub milestone backlog into the repo implementation baseline for the next phase of work
 - `2026-06-21`: aligned repo governance with the Day 2 interoperability guidance at the workflow layer:
   - added repo-level defaults for tool vs collaborator-agent vs UI-contract decisions
   - expanded `.ai` task-packet and eval-review fields with trust level, data scope, HITL, and read-only expectations
   - added contract-test coverage so interoperability guardrails remain discoverable and hard to drift
   - explicitly deferred AP2/UCP-style commerce flows until the repo has a real autonomous transaction surface
-
 ---
