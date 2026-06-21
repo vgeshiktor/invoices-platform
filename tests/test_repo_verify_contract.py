@@ -8,6 +8,9 @@ AGENTS_GUIDE = ROOT / "AGENTS.md"
 AI_README = ROOT / ".ai" / "README.md"
 TASK_PACKET_TEMPLATE = ROOT / ".ai" / "task-packet-template.md"
 EVAL_TASKS = ROOT / ".ai" / "evals" / "tasks.yaml"
+DAY2_INTEROP_TASK_PACKET = (
+    ROOT / ".ai" / "tasks" / "2026-06-21-day2-interoperability-governance.md"
+)
 
 
 def _read(path: Path) -> str:
@@ -54,6 +57,7 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     ai_readme = _read(AI_README)
     task_packet_template = _read(TASK_PACKET_TEMPLATE)
     eval_tasks = _read(EVAL_TASKS)
+    day2_task_packet = _read(DAY2_INTEROP_TASK_PACKET)
 
     assert "## Agentic Engineering Defaults" in agents_guide
     assert "working mode: `prototype` for exploration or `production`" in agents_guide
@@ -173,3 +177,11 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
         "unsupported policy claims, missing review gates, or doc/test drift"
         in eval_tasks
     )
+
+    assert "Working mode: `production`" in day2_task_packet
+    assert "Integration mode: `commerce-deferred`" in day2_task_packet
+    assert "Trust level: `official`" in day2_task_packet
+    assert "Data scope: `sanitized`" in day2_task_packet
+    assert "HITL approval point:" in day2_task_packet
+    assert "Write permission / read-only expectation:" in day2_task_packet
+    assert "Transport/schema debugging plan:" in day2_task_packet
