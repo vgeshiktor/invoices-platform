@@ -58,6 +58,7 @@ Services in `deploy/compose/docker-compose.dev.yml`:
 | Parse PDFs and generate report files | `make run-report ...` | `python -m invplatform.cli.invoices_report ...` |
 | Move likely non-invoice PDFs to quarantine | `make quarantine` | `python -m invplatform.cli.quarantine_invoices ...` |
 | Remove duplicate invoice files by hash | none | `python scripts/remove_duplicate_invoices.py ...` |
+| Run the minimal Go health API | `make -C apps/api-go run` | `go run ./cmd/invoicer` |
 | Start local n8n | `make run-n8n` | docker compose directly |
 
 ## 3. Gmail Invoice Finder
@@ -338,10 +339,13 @@ Run:
 make -C apps/api-go run
 ```
 
-Current endpoint:
-- `GET /healthz` -> `200 ok`
+Current endpoint groups:
+- `GET /healthz`
 
-`integrations/openapi/invoices.yaml` describes broader future invoice endpoints that are not fully implemented in current Go handler.
+Notes:
+- `main` currently exposes only the health endpoint.
+- `integrations/openapi/invoices.yaml` is the source-of-truth contract for the Weeks 1-10 control-plane roadmap and includes the current health route.
+- `docs/FRONTEND_GITHUB_ISSUES.md` is the checked-in backlog mirror for Weeks 1-10.
 
 ## 11. Testing and Quality
 
