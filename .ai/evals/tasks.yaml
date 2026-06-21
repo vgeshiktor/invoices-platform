@@ -259,6 +259,33 @@ legacy_review_templates:
       - Governance artifacts behave like maintained repo assets rather than loose notes.
       - Review output highlights policy drift before shared workflow changes ship.
 
+  - id: day2-interoperability-governance-review
+    name: Review Day 2 interoperability governance defaults and guardrails
+    mode: production
+    reasoning_level: ai:review
+    scope: governance review of interoperability defaults across repo rules, task packets, eval templates, and repo contract tests
+    source_of_truth:
+      - AGENTS.md
+      - PLANS.md
+      - .ai/README.md
+      - .ai/task-packet-template.md
+      - .ai/evals/tasks.yaml
+      - tests/test_repo_verify_contract.py
+      - docs/SECURITY-AND-DATA-HANDLING.md
+    rubric:
+      - tool vs collaborator-agent vs ui-contract classification stays explicit
+      - HITL, trust level, and real-data scope rules remain aligned
+      - UI guidance stays declarative and trusted-catalog only
+      - deferred commerce guidance does not overclaim unsupported runtime features
+    ship_gate: interoperability governance must stay repo-backed, reviewable, and non-speculative
+    required_validation:
+      - Check that interoperability docs and templates agree on integration mode, trust level, and data scope fields.
+      - Check that HITL, read-only, and credential-handling rules do not drift from repo security guidance.
+      - Flag unsupported policy claims, missing review gates, or doc/test drift.
+    success_criteria:
+      - Governance defaults clearly separate tools, collaborator agents, UI contracts, and deferred commerce work.
+      - Repo contract tests protect the documented interoperability guardrails without adding telemetry requirements.
+
 p1_after_first_hardening_pr:
   - Add property-based tests for deduplication, date intervals, and monetary calculations.
   - Validate the OpenAPI draft against actual implementation boundaries.

@@ -9,6 +9,13 @@ Working mode: `prototype | production`
 Success criteria / eval rubric:
 AI-specific review focus:
 Harness components touched:
+Integration mode: `tool | collaborator-agent | ui-contract | commerce-deferred`
+External dependency or registry:
+Trust level: `official | internal | third-party-vetted | public-prototype-only`
+Data scope: `synthetic | sanitized | real-nonprod | real-prod-readonly`
+HITL approval point:
+Write permission / read-only expectation:
+Transport/schema debugging plan:
 Reasoning level: `ai:light | ai:standard | ai:deep | ai:review`
 max initial files: `6`
 Overview/search plan:
