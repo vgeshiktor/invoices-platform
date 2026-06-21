@@ -34,6 +34,19 @@ Use `.ai/` for task-scoped packets and evaluation inputs/results when work is su
 - Review AI-generated code with equal or higher scrutiny than human-written code, especially around hallucinated dependencies, missing failure handling, and unsupported policy claims.
 - When an agent repeats a mistake, convert the lesson into a repo rule, template field, example, or test instead of relying on memory alone.
 
+## Interoperability Defaults
+
+- Choose tools or MCP-style integrations for bounded, schema-driven, fire-and-forget operations.
+- Choose collaborating agents or subagents for unbounded, ambiguous, multi-turn work that may pause for clarification.
+- For new integrations, search for an existing vetted tool, server, or skill first before inventing custom wrappers.
+- Prefer official, internal, or otherwise vetted registries over public community endpoints.
+- Do not use public or unverified tool servers as production dependencies.
+- Never place credentials in prompts or checked-in scripts; continue using environment variables or repo-approved secret configuration paths.
+- Default sensitive or real-data external access to non-production or sanitized environments; if real data access is unavoidable, require read-only scope when possible.
+- For side-effectful or sensitive external actions, require explicit human approval before side-effectful or sensitive external tool calls.
+- For UI-generating work, allow declarative or trusted-catalog UI contracts rather than arbitrary generated executable UI.
+- Defer AP2/UCP-style payment or procurement flows until the repo has an explicit autonomous transaction surface and dedicated guardrails.
+
 ## AI Context Budget
 
 - Start with `README.md`, `docs/USAGE.md`, and the active task packet if present.

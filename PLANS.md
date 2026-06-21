@@ -43,5 +43,10 @@
   - added explicit prototype vs production planning fields plus AI-specific review expectations for substantial work
   - normalized review templates with structured rubric and ship-gate metadata
   - intentionally deferred deeper runtime observability, traces, and model-routing work until the repo needs more than governance hardening
+- `2026-06-21`: aligned repo governance with the Day 2 interoperability guidance at the workflow layer:
+  - added repo-level defaults for tool vs collaborator-agent vs UI-contract decisions
+  - expanded `.ai` task-packet and eval-review fields with trust level, data scope, HITL, and read-only expectations
+  - added contract-test coverage so interoperability guardrails remain discoverable and hard to drift
+  - explicitly deferred AP2/UCP-style commerce flows until the repo has a real autonomous transaction surface
 
 ---

@@ -63,6 +63,20 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
         "convert the lesson into a repo rule, template field, example, or test"
         in agents_guide
     )
+    assert "## Interoperability Defaults" in agents_guide
+    assert "bounded, schema-driven, fire-and-forget operations" in agents_guide
+    assert "unbounded, ambiguous, multi-turn work" in agents_guide
+    assert "search for an existing vetted tool, server, or skill first" in agents_guide
+    assert "official, internal, or otherwise vetted registries" in agents_guide
+    assert (
+        "public or unverified tool servers as production dependencies" in agents_guide
+    )
+    assert (
+        "require explicit human approval before side-effectful or sensitive external tool calls"
+        in agents_guide
+    )
+    assert "declarative or trusted-catalog UI contracts" in agents_guide
+    assert "Defer AP2/UCP-style payment or procurement flows" in agents_guide
 
     assert "## Lean-ctx Workflow" in agents_guide
     assert "start with `ctx_overview`" in agents_guide
@@ -90,11 +104,42 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert '`ctx_shell` or `lean-ctx -c "<command>"`' in ai_readme
     assert "record the reason in the task packet" in ai_readme
     assert "`lean-ctx gain --deep`" in ai_readme
+    assert "## Interoperability Review Gate" in ai_readme
+    assert (
+        "integration mode: `tool | collaborator-agent | ui-contract | commerce-deferred`"
+        in ai_readme
+    )
+    assert (
+        "trust level: `official | internal | third-party-vetted | public-prototype-only`"
+        in ai_readme
+    )
+    assert (
+        "data scope: `synthetic | sanitized | real-nonprod | real-prod-readonly`"
+        in ai_readme
+    )
+    assert "read-only scope when possible" in ai_readme
+    assert "HITL approval point" in ai_readme
 
     assert "Working mode: `prototype | production`" in task_packet_template
     assert "Success criteria / eval rubric:" in task_packet_template
     assert "AI-specific review focus:" in task_packet_template
     assert "Harness components touched:" in task_packet_template
+    assert (
+        "Integration mode: `tool | collaborator-agent | ui-contract | commerce-deferred`"
+        in task_packet_template
+    )
+    assert "External dependency or registry:" in task_packet_template
+    assert (
+        "Trust level: `official | internal | third-party-vetted | public-prototype-only`"
+        in task_packet_template
+    )
+    assert (
+        "Data scope: `synthetic | sanitized | real-nonprod | real-prod-readonly`"
+        in task_packet_template
+    )
+    assert "HITL approval point:" in task_packet_template
+    assert "Write permission / read-only expectation:" in task_packet_template
+    assert "Transport/schema debugging plan:" in task_packet_template
 
     assert "Overview/search plan:" in task_packet_template
     assert "Lean-ctx structure check (`ctx_tree`) scope:" in task_packet_template
@@ -115,6 +160,15 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "Review lean-ctx routing guidance and fallback rules" in eval_tasks
     assert "Contract coverage protects the policy" in eval_tasks
     assert "- id: agentic-alignment-governance-review" in eval_tasks
+    assert "- id: day2-interoperability-governance-review" in eval_tasks
+    assert (
+        "Review Day 2 interoperability governance defaults and guardrails" in eval_tasks
+    )
+    assert (
+        "tool vs collaborator-agent vs ui-contract classification stays explicit"
+        in eval_tasks
+    )
+    assert "HITL, trust level, and real-data scope rules remain aligned" in eval_tasks
     assert (
         "unsupported policy claims, missing review gates, or doc/test drift"
         in eval_tasks
