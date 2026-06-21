@@ -64,5 +64,5 @@ Optional fields:
 
 ## Baseline Instrumentation Notes
 
-- The current repo baseline exposes the request ID in UI status surfaces and persists it in audit events.
+- The target Weeks 9-10 baseline will expose the request ID in UI status surfaces and persist it in audit events.
 - Deeper OTel span creation and Sentry runtime capture remain follow-on work, but new events should keep the names above stable.

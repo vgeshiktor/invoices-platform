@@ -201,6 +201,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OAuthFlowResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/provider-configs/{providerConfigId}/oauth/callback:
     post:
       tags: [Providers]
@@ -224,6 +226,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/provider-configs/{providerConfigId}/oauth/refresh:
     post:
       tags: [Providers]
@@ -241,6 +245,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/provider-configs/{providerConfigId}/oauth/revoke:
     post:
       tags: [Providers]
@@ -258,6 +264,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProviderConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/collection-jobs:
     get:
       tags: [Collection Jobs]
@@ -273,6 +281,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CollectionJobList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [Collection Jobs]
       operationId: createCollectionJob
@@ -293,6 +303,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CollectionJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/collection-jobs/{collectionJobId}:
     get:
       tags: [Collection Jobs]
@@ -310,6 +322,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CollectionJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /v1/collection-jobs/{collectionJobId}/retry:
@@ -329,6 +343,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CollectionJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/reports:
     get:
       tags: [Reports]
@@ -344,6 +360,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [Reports]
       operationId: createReport
@@ -364,6 +382,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/reports/{reportId}:
     get:
       tags: [Reports]
@@ -381,6 +401,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /v1/reports/{reportId}/artifacts/{artifactFormat}:
@@ -401,6 +423,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportArtifact'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /v1/schedules:
@@ -418,6 +442,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScheduleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [Schedules]
       operationId: createSchedule
@@ -438,6 +464,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/schedules/{scheduleId}:
     get:
       tags: [Schedules]
@@ -455,6 +483,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
@@ -479,6 +509,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /v1/schedules/{scheduleId}/pause:
@@ -498,6 +530,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /v1/schedules/{scheduleId}/resume:
@@ -517,6 +551,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
   /v1/audit-events:
@@ -543,6 +579,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditEventList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   headers:
     XRequestID:
@@ -626,6 +664,7 @@ components:
           type: string
         permissions:
           type: array
+          maxItems: 32
           items:
             type: string
     AuthResponse:
@@ -808,6 +847,9 @@ components:
       properties:
         providers:
           type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
           items:
             $ref: '#/components/schemas/ProviderType'
         month:
@@ -899,6 +941,9 @@ components:
           type: string
         formats:
           type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
           items:
             $ref: '#/components/schemas/ReportFormat'
         jsonOutput:
@@ -975,6 +1020,9 @@ components:
           type: string
         providers:
           type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
           items:
             $ref: '#/components/schemas/ProviderType'
     ScheduleUpdateRequest:
@@ -988,6 +1036,8 @@ components:
           type: string
         providers:
           type: array
+          maxItems: 2
+          uniqueItems: true
           items:
             $ref: '#/components/schemas/ProviderType'
         nextRunAt:
