@@ -10,7 +10,10 @@ dist/
 **/.idea
 **/.vscode
 .token_cache.bin
-report*
+report-*.json
+report-*.csv
+report-*.pdf
+report-*.summary.csv
 !reports/
 reports/*
 !reports/.gitkeep
