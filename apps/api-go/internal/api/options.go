@@ -9,3 +9,11 @@ func WithStore(store Store) Option {
 		}
 	}
 }
+
+func WithCollectionRunner(runner CollectionRunner) Option {
+	return func(server *Server) {
+		if runner != nil {
+			server.collectionRunner = runner
+		}
+	}
+}

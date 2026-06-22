@@ -16,8 +16,9 @@ import (
 const sessionCookieName = "invplatform_session"
 
 type Server struct {
-	idCounter uint64
-	store     Store
+	idCounter        uint64
+	store            Store
+	collectionRunner CollectionRunner
 }
 
 type Session struct {
@@ -105,21 +106,25 @@ type OAuthCallbackRequest struct {
 }
 
 type CollectionJob struct {
-	ID             string   `json:"id"`
-	TenantID       string   `json:"tenantId"`
-	Status         string   `json:"status"`
-	Providers      []string `json:"providers"`
-	Month          int      `json:"month"`
-	Year           int      `json:"year"`
-	RequestID      string   `json:"requestId,omitempty"`
-	RunSummaryPath string   `json:"runSummaryPath,omitempty"`
-	InvoicesDir    string   `json:"invoicesDir,omitempty"`
-	RetryOf        string   `json:"retryOf,omitempty"`
-	Error          string   `json:"error,omitempty"`
-	StartedAt      string   `json:"startedAt,omitempty"`
-	FinishedAt     string   `json:"finishedAt,omitempty"`
-	CreatedAt      string   `json:"createdAt"`
-	UpdatedAt      string   `json:"updatedAt"`
+	ID              string   `json:"id"`
+	TenantID        string   `json:"tenantId"`
+	Status          string   `json:"status"`
+	Providers       []string `json:"providers"`
+	Month           int      `json:"month"`
+	Year            int      `json:"year"`
+	GraphClientID   string   `json:"-"`
+	GraphAuthority  string   `json:"-"`
+	GraphTokenCache string   `json:"-"`
+	InteractiveAuth bool     `json:"-"`
+	RequestID       string   `json:"requestId,omitempty"`
+	RunSummaryPath  string   `json:"runSummaryPath,omitempty"`
+	InvoicesDir     string   `json:"invoicesDir,omitempty"`
+	RetryOf         string   `json:"retryOf,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	StartedAt       string   `json:"startedAt,omitempty"`
+	FinishedAt      string   `json:"finishedAt,omitempty"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
 }
 
 type CollectionJobCreateRequest struct {
@@ -234,7 +239,10 @@ type contextKey string
 var routeContextKey = contextKey("route-context")
 
 func NewServer(opts ...Option) *Server {
-	server := &Server{store: NewMemoryStore()}
+	server := &Server{
+		store:            NewMemoryStore(),
+		collectionRunner: noopCollectionRunner{},
+	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(server)
@@ -583,15 +591,19 @@ func (s *Server) handleCollectionJobs(w http.ResponseWriter, r *http.Request, se
 		}
 		now := utcNow()
 		item := CollectionJob{
-			ID:        s.newID("job"),
-			TenantID:  session.TenantID,
-			Status:    "queued",
-			Providers: req.Providers,
-			Month:     req.Month,
-			Year:      req.Year,
-			RequestID: routeCtx(r).RequestID,
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:              s.newID("job"),
+			TenantID:        session.TenantID,
+			Status:          "queued",
+			Providers:       req.Providers,
+			Month:           req.Month,
+			Year:            req.Year,
+			GraphClientID:   req.GraphClientID,
+			GraphAuthority:  req.GraphAuthority,
+			GraphTokenCache: req.GraphTokenCache,
+			InteractiveAuth: req.InteractiveAuth,
+			RequestID:       routeCtx(r).RequestID,
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		}
 		if err := s.store.CreateCollectionJob(r.Context(), item); err != nil {
 			s.writeInternalError(w, err)
@@ -601,6 +613,7 @@ func (s *Server) handleCollectionJobs(w http.ResponseWriter, r *http.Request, se
 			s.writeInternalError(w, err)
 			return
 		}
+		item = s.runCollectionJob(r.Context(), session, routeCtx(r).RequestID, item, req)
 		writeJSON(w, http.StatusCreated, item)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method not allowed"})
@@ -640,6 +653,15 @@ func (s *Server) handleCollectionJobDetail(w http.ResponseWriter, r *http.Reques
 			s.writeInternalError(w, err)
 			return
 		}
+		retry = s.runCollectionJob(r.Context(), session, routeCtx(r).RequestID, retry, CollectionJobCreateRequest{
+			Providers:       retry.Providers,
+			Month:           retry.Month,
+			Year:            retry.Year,
+			GraphClientID:   retry.GraphClientID,
+			GraphAuthority:  retry.GraphAuthority,
+			GraphTokenCache: retry.GraphTokenCache,
+			InteractiveAuth: retry.InteractiveAuth,
+		})
 		writeJSON(w, http.StatusCreated, retry)
 		return
 	}
@@ -872,6 +894,64 @@ func (s *Server) recordAudit(ctx context.Context, tenantID, requestID, action, e
 		Message:    message,
 		CreatedAt:  utcNow(),
 	})
+}
+
+func (s *Server) runCollectionJob(ctx context.Context, session Session, requestID string, item CollectionJob, req CollectionJobCreateRequest) CollectionJob {
+	started := utcNow()
+	item.Status = "running"
+	item.StartedAt = started
+	item.UpdatedAt = started
+	item.Error = ""
+	if err := s.store.UpdateCollectionJob(ctx, item); err != nil {
+		item.Status = "failed"
+		item.Error = "failed to persist running collection state"
+		item.FinishedAt = utcNow()
+		item.UpdatedAt = item.FinishedAt
+		return item
+	}
+	_ = s.recordAudit(ctx, session.TenantID, requestID, "collection.started", "collection_job", item.ID, "Started collection job")
+
+	result, err := s.collectionRunner.RunCollectionJob(ctx, CollectionRunRequest{
+		Job:             item,
+		GraphClientID:   req.GraphClientID,
+		GraphAuthority:  req.GraphAuthority,
+		GraphTokenCache: req.GraphTokenCache,
+		InteractiveAuth: req.InteractiveAuth,
+		RequestID:       requestID,
+	})
+
+	item.RunSummaryPath = result.RunSummaryPath
+	item.InvoicesDir = result.InvoicesDir
+	item.FinishedAt = utcNow()
+	item.UpdatedAt = item.FinishedAt
+	item.Error = strings.TrimSpace(result.Error)
+	if err != nil {
+		if item.Error == "" {
+			item.Error = err.Error()
+		}
+		item.Status = "failed"
+	} else if result.Status == "failed" {
+		item.Status = "failed"
+	} else {
+		item.Status = "succeeded"
+		item.Error = ""
+	}
+
+	if storeErr := s.store.UpdateCollectionJob(ctx, item); storeErr != nil {
+		item.Status = "failed"
+		if item.Error == "" {
+			item.Error = "failed to persist completed collection state"
+		}
+	}
+
+	action := "collection.succeeded"
+	message := "Collection job completed successfully"
+	if item.Status == "failed" {
+		action = "collection.failed"
+		message = pick(item.Error, "Collection job failed")
+	}
+	_ = s.recordAudit(ctx, session.TenantID, requestID, action, "collection_job", item.ID, message)
+	return item
 }
 
 func (s *Server) writeLookupError(w http.ResponseWriter, err error, notFoundMessage string) {

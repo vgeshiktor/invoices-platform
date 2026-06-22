@@ -144,7 +144,8 @@ func (s *PostgresStore) UpdateProviderConfig(ctx context.Context, item api.Provi
 
 func (s *PostgresStore) ListCollectionJobs(ctx context.Context, tenantID string) ([]api.CollectionJob, error) {
 	rows, err := s.pool.Query(ctx, `
-		select id, tenant_id, status, providers_json, month, year, request_id, run_summary_path, invoices_dir, retry_of, error_text,
+		select id, tenant_id, status, providers_json, month, year, graph_client_id, graph_authority, graph_token_cache_path, interactive_auth,
+		       request_id, run_summary_path, invoices_dir, retry_of, error_text,
 		       started_at, finished_at, created_at, updated_at
 		from collection_jobs
 		where tenant_id = $1
@@ -159,7 +160,8 @@ func (s *PostgresStore) ListCollectionJobs(ctx context.Context, tenantID string)
 
 func (s *PostgresStore) GetCollectionJob(ctx context.Context, tenantID, id string) (api.CollectionJob, error) {
 	row := s.pool.QueryRow(ctx, `
-		select id, tenant_id, status, providers_json, month, year, request_id, run_summary_path, invoices_dir, retry_of, error_text,
+		select id, tenant_id, status, providers_json, month, year, graph_client_id, graph_authority, graph_token_cache_path, interactive_auth,
+		       request_id, run_summary_path, invoices_dir, retry_of, error_text,
 		       started_at, finished_at, created_at, updated_at
 		from collection_jobs
 		where tenant_id = $1 and id = $2
@@ -174,10 +176,10 @@ func (s *PostgresStore) CreateCollectionJob(ctx context.Context, item api.Collec
 	}
 	_, err = s.pool.Exec(ctx, `
 		insert into collection_jobs (
-			id, tenant_id, status, providers_json, month, year, request_id, run_summary_path, invoices_dir, retry_of, error_text,
-			started_at, finished_at, created_at, updated_at
-		) values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-	`, item.ID, item.TenantID, item.Status, providersJSON, item.Month, item.Year, nullString(item.RequestID), nullString(item.RunSummaryPath), nullString(item.InvoicesDir), nullString(item.RetryOf), nullString(item.Error), nullTime(item.StartedAt), nullTime(item.FinishedAt), parseTime(item.CreatedAt), parseTime(item.UpdatedAt))
+			id, tenant_id, status, providers_json, month, year, graph_client_id, graph_authority, graph_token_cache_path, interactive_auth,
+			request_id, run_summary_path, invoices_dir, retry_of, error_text, started_at, finished_at, created_at, updated_at
+		) values ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+	`, item.ID, item.TenantID, item.Status, providersJSON, item.Month, item.Year, nullString(item.GraphClientID), nullString(item.GraphAuthority), nullString(item.GraphTokenCache), item.InteractiveAuth, nullString(item.RequestID), nullString(item.RunSummaryPath), nullString(item.InvoicesDir), nullString(item.RetryOf), nullString(item.Error), nullTime(item.StartedAt), nullTime(item.FinishedAt), parseTime(item.CreatedAt), parseTime(item.UpdatedAt))
 	return err
 }
 
@@ -192,17 +194,21 @@ func (s *PostgresStore) UpdateCollectionJob(ctx context.Context, item api.Collec
 			providers_json = $4::jsonb,
 			month = $5,
 			year = $6,
-			request_id = $7,
-			run_summary_path = $8,
-			invoices_dir = $9,
-			retry_of = $10,
-			error_text = $11,
-			started_at = $12,
-			finished_at = $13,
-			created_at = $14,
-			updated_at = $15
+			graph_client_id = $7,
+			graph_authority = $8,
+			graph_token_cache_path = $9,
+			interactive_auth = $10,
+			request_id = $11,
+			run_summary_path = $12,
+			invoices_dir = $13,
+			retry_of = $14,
+			error_text = $15,
+			started_at = $16,
+			finished_at = $17,
+			created_at = $18,
+			updated_at = $19
 		where id = $1 and tenant_id = $2
-	`, item.ID, item.TenantID, item.Status, providersJSON, item.Month, item.Year, nullString(item.RequestID), nullString(item.RunSummaryPath), nullString(item.InvoicesDir), nullString(item.RetryOf), nullString(item.Error), nullTime(item.StartedAt), nullTime(item.FinishedAt), parseTime(item.CreatedAt), parseTime(item.UpdatedAt))
+	`, item.ID, item.TenantID, item.Status, providersJSON, item.Month, item.Year, nullString(item.GraphClientID), nullString(item.GraphAuthority), nullString(item.GraphTokenCache), item.InteractiveAuth, nullString(item.RequestID), nullString(item.RunSummaryPath), nullString(item.InvoicesDir), nullString(item.RetryOf), nullString(item.Error), nullTime(item.StartedAt), nullTime(item.FinishedAt), parseTime(item.CreatedAt), parseTime(item.UpdatedAt))
 	return rowsAffectedOrNotFound(tag, err)
 }
 
@@ -433,6 +439,10 @@ type collectionJobScanner interface {
 func scanCollectionJob(row collectionJobScanner) (api.CollectionJob, error) {
 	var item api.CollectionJob
 	var providersJSON []byte
+	var graphClientID sql.NullString
+	var graphAuthority sql.NullString
+	var graphTokenCache sql.NullString
+	var interactiveAuth bool
 	var requestID sql.NullString
 	var runSummaryPath sql.NullString
 	var invoicesDir sql.NullString
@@ -442,7 +452,7 @@ func scanCollectionJob(row collectionJobScanner) (api.CollectionJob, error) {
 	var finishedAt sql.NullTime
 	var createdAt time.Time
 	var updatedAt time.Time
-	err := row.Scan(&item.ID, &item.TenantID, &item.Status, &providersJSON, &item.Month, &item.Year, &requestID, &runSummaryPath, &invoicesDir, &retryOf, &errorText, &startedAt, &finishedAt, &createdAt, &updatedAt)
+	err := row.Scan(&item.ID, &item.TenantID, &item.Status, &providersJSON, &item.Month, &item.Year, &graphClientID, &graphAuthority, &graphTokenCache, &interactiveAuth, &requestID, &runSummaryPath, &invoicesDir, &retryOf, &errorText, &startedAt, &finishedAt, &createdAt, &updatedAt)
 	if err != nil {
 		return api.CollectionJob{}, mapScanError(err)
 	}
@@ -454,6 +464,10 @@ func scanCollectionJob(row collectionJobScanner) (api.CollectionJob, error) {
 	item.InvoicesDir = invoicesDir.String
 	item.RetryOf = retryOf.String
 	item.Error = errorText.String
+	item.GraphClientID = graphClientID.String
+	item.GraphAuthority = graphAuthority.String
+	item.GraphTokenCache = graphTokenCache.String
+	item.InteractiveAuth = interactiveAuth
 	item.StartedAt = nullableTimeString(startedAt)
 	item.FinishedAt = nullableTimeString(finishedAt)
 	item.CreatedAt = createdAt.UTC().Format(time.RFC3339)

@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,6 +80,90 @@ func TestCreateProviderConfigAndAuditTrail(t *testing.T) {
 	}
 }
 
+func TestCollectionJobRunsAndPersistsFinalState(t *testing.T) {
+	server := NewServer(
+		WithCollectionRunner(fakeCollectionRunner{
+			result: CollectionRunResult{
+				Status:         "succeeded",
+				RunSummaryPath: "/tmp/run_summary.json",
+				InvoicesDir:    "/tmp/invoices_06_2026",
+			},
+		}),
+	)
+	cookie := loginForTest(t, server)
+
+	payload, _ := json.Marshal(CollectionJobCreateRequest{
+		Providers: []string{"gmail"},
+		Month:     6,
+		Year:      2026,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/collection-jobs", bytes.NewReader(payload))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected create 201, got %d", rec.Code)
+	}
+	var job CollectionJob
+	if err := json.NewDecoder(rec.Body).Decode(&job); err != nil {
+		t.Fatalf("decode job: %v", err)
+	}
+	if job.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %s", job.Status)
+	}
+	if job.RunSummaryPath == "" || job.InvoicesDir == "" || job.StartedAt == "" || job.FinishedAt == "" {
+		t.Fatalf("expected persisted runtime fields, got %#v", job)
+	}
+}
+
+func TestCollectionJobFailurePersistsErrorAndSupportsRetry(t *testing.T) {
+	server := NewServer(
+		WithCollectionRunner(fakeCollectionRunner{
+			err: "provider timeout",
+			result: CollectionRunResult{
+				Status: "failed",
+				Error:  "provider timeout",
+			},
+		}),
+	)
+	cookie := loginForTest(t, server)
+
+	payload, _ := json.Marshal(CollectionJobCreateRequest{
+		Providers: []string{"outlook"},
+		Month:     6,
+		Year:      2026,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/collection-jobs", bytes.NewReader(payload))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	var failedJob CollectionJob
+	if err := json.NewDecoder(rec.Body).Decode(&failedJob); err != nil {
+		t.Fatalf("decode failed job: %v", err)
+	}
+	if failedJob.Status != "failed" || failedJob.Error == "" {
+		t.Fatalf("expected failed job with error, got %#v", failedJob)
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPost, "/v1/collection-jobs/"+failedJob.ID+"/retry", nil)
+	retryReq.AddCookie(cookie)
+	retryRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(retryRec, retryReq)
+
+	if retryRec.Code != http.StatusCreated {
+		t.Fatalf("expected retry 201, got %d", retryRec.Code)
+	}
+	var retried CollectionJob
+	if err := json.NewDecoder(retryRec.Body).Decode(&retried); err != nil {
+		t.Fatalf("decode retried job: %v", err)
+	}
+	if retried.RetryOf != failedJob.ID || retried.Status != "failed" {
+		t.Fatalf("expected failed retry linked to original job, got %#v", retried)
+	}
+}
+
 func loginForTest(t *testing.T, server *Server) *http.Cookie {
 	t.Helper()
 
@@ -92,4 +178,16 @@ func loginForTest(t *testing.T, server *Server) *http.Cookie {
 		t.Fatalf("expected login 200, got %d", rec.Code)
 	}
 	return rec.Result().Cookies()[0]
+}
+
+type fakeCollectionRunner struct {
+	result CollectionRunResult
+	err    string
+}
+
+func (f fakeCollectionRunner) RunCollectionJob(_ context.Context, _ CollectionRunRequest) (CollectionRunResult, error) {
+	if f.err != "" {
+		return f.result, errors.New(f.err)
+	}
+	return f.result, nil
 }
