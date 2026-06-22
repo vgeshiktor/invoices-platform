@@ -19,6 +19,7 @@ type Server struct {
 	idCounter        uint64
 	store            Store
 	collectionRunner CollectionRunner
+	reportRunner     ReportRunner
 }
 
 type Session struct {
@@ -242,6 +243,7 @@ func NewServer(opts ...Option) *Server {
 	server := &Server{
 		store:            NewMemoryStore(),
 		collectionRunner: noopCollectionRunner{},
+		reportRunner:     noopReportRunner{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -706,6 +708,7 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request, session S
 			s.writeInternalError(w, err)
 			return
 		}
+		item = s.runReport(r.Context(), session, routeCtx(r).RequestID, item, req)
 		writeJSON(w, http.StatusCreated, item)
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method not allowed"})
@@ -951,6 +954,64 @@ func (s *Server) runCollectionJob(ctx context.Context, session Session, requestI
 		message = pick(item.Error, "Collection job failed")
 	}
 	_ = s.recordAudit(ctx, session.TenantID, requestID, action, "collection_job", item.ID, message)
+	return item
+}
+
+func (s *Server) runReport(ctx context.Context, session Session, requestID string, item Report, req ReportCreateRequest) Report {
+	started := utcNow()
+	item.Status = "running"
+	item.StartedAt = started
+	item.UpdatedAt = started
+	item.Error = ""
+	if err := s.store.UpdateReport(ctx, item); err != nil {
+		item.Status = "failed"
+		item.Error = "failed to persist running report state"
+		item.FinishedAt = utcNow()
+		item.UpdatedAt = item.FinishedAt
+		return item
+	}
+	_ = s.recordAudit(ctx, session.TenantID, requestID, "report.started", "report", item.ID, "Started report generation")
+
+	result, err := s.reportRunner.RunReport(ctx, ReportRunRequest{
+		Report:           item,
+		InputDir:         req.InputDir,
+		Formats:          append([]string(nil), req.Formats...),
+		JSONOutput:       req.JSONOutput,
+		CSVOutput:        req.CSVOutput,
+		SummaryCSVOutput: req.SummaryCSVOutput,
+		PDFOutput:        req.PDFOutput,
+	})
+	item.Artifacts = result.Artifacts
+	item.Totals = result.Totals
+	item.FinishedAt = utcNow()
+	item.UpdatedAt = item.FinishedAt
+	item.Error = strings.TrimSpace(result.Error)
+	if err != nil {
+		if item.Error == "" {
+			item.Error = err.Error()
+		}
+		item.Status = "failed"
+	} else if result.Status == "failed" {
+		item.Status = "failed"
+	} else {
+		item.Status = "ready"
+		item.Error = ""
+	}
+
+	if storeErr := s.store.UpdateReport(ctx, item); storeErr != nil {
+		item.Status = "failed"
+		if item.Error == "" {
+			item.Error = "failed to persist completed report state"
+		}
+	}
+
+	action := "report.ready"
+	message := "Report generation completed successfully"
+	if item.Status == "failed" {
+		action = "report.failed"
+		message = pick(item.Error, "Report generation failed")
+	}
+	_ = s.recordAudit(ctx, session.TenantID, requestID, action, "report", item.ID, message)
 	return item
 }
 

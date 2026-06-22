@@ -10,7 +10,10 @@ dist/
 **/.idea
 **/.vscode
 .token_cache.bin
-report*
+report-*.json
+report-*.csv
+report-*.pdf
+report-*.summary.csv
 !reports/
 reports/*
 !reports/.gitkeep
@@ -32,3 +35,5 @@ gmail_regected.json
 invoices_report.csv
 htmlcov
 .msal_token_cache.bin
+apps/web/coverage/
+apps/web/test-results/
