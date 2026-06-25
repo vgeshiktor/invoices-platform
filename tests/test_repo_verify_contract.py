@@ -11,6 +11,9 @@ EVAL_TASKS = ROOT / ".ai" / "evals" / "tasks.yaml"
 DAY2_INTEROP_TASK_PACKET = (
     ROOT / ".ai" / "tasks" / "2026-06-21-day2-interoperability-governance.md"
 )
+DAY3_SKILL_GOVERNANCE_TASK_PACKET = (
+    ROOT / ".ai" / "tasks" / "2026-06-25-day3-skill-governance.md"
+)
 
 
 def _read(path: Path) -> str:
@@ -58,6 +61,7 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     task_packet_template = _read(TASK_PACKET_TEMPLATE)
     eval_tasks = _read(EVAL_TASKS)
     day2_task_packet = _read(DAY2_INTEROP_TASK_PACKET)
+    day3_task_packet = _read(DAY3_SKILL_GOVERNANCE_TASK_PACKET)
 
     assert "## Agentic Engineering Defaults" in agents_guide
     assert "working mode: `prototype` for exploration or `production`" in agents_guide
@@ -81,6 +85,22 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     )
     assert "declarative or trusted-catalog UI contracts" in agents_guide
     assert "Defer AP2/UCP-style payment or procurement flows" in agents_guide
+    assert "## Skill Governance Defaults" in agents_guide
+    assert "Skills are for narrow, repeatable workflows" in agents_guide
+    assert "Always-on project conventions belong in `AGENTS.md`" in agents_guide
+    assert "first-party, internal, or otherwise vetted skills first" in agents_guide
+    assert "Pin adopted skills to a reviewed version or commit" in agents_guide
+    assert "one skill, one job" in agents_guide
+    assert "what it does, when to use it, and when not to use it" in agents_guide
+    assert "progressive disclosure" in agents_guide
+    assert "deterministic helper logic in `scripts/`" in agents_guide
+    assert (
+        "Do not hard-code secrets, credentials, or machine-specific paths"
+        in agents_guide
+    )
+    assert "portable across compliant runtimes" in agents_guide
+    assert "read-only" in agents_guide
+    assert "sanitized" in agents_guide
 
     assert "## Lean-ctx Workflow" in agents_guide
     assert "start with `ctx_overview`" in agents_guide
@@ -123,6 +143,14 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     )
     assert "read-only scope when possible" in ai_readme
     assert "HITL approval point" in ai_readme
+    assert "## Skill Governance Review Gate" in ai_readme
+    assert (
+        "use the existing task-packet fields rather than adding a skill-specific template"
+        in ai_readme
+    )
+    assert "external-skill adoption work" in ai_readme
+    assert "future repo-local skill authoring work" in ai_readme
+    assert "`trigger`, `execution`, `regression`, and `token budget`" in ai_readme
 
     assert "Working mode: `prototype | production`" in task_packet_template
     assert "Success criteria / eval rubric:" in task_packet_template
@@ -165,6 +193,11 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "Contract coverage protects the policy" in eval_tasks
     assert "- id: agentic-alignment-governance-review" in eval_tasks
     assert "- id: day2-interoperability-governance-review" in eval_tasks
+    assert "- id: day3-skill-governance-review" in eval_tasks
+    assert (
+        "Review Day 3 skill governance defaults and skill-library guardrails"
+        in eval_tasks
+    )
     assert (
         "Review Day 2 interoperability governance defaults and guardrails" in eval_tasks
     )
@@ -173,6 +206,15 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
         in eval_tasks
     )
     assert "HITL, trust level, and real-data scope rules remain aligned" in eval_tasks
+    assert "AGENTS.md vs Skills vs MCP/tool boundaries stay explicit" in eval_tasks
+    assert "source selection and pinning rules stay reviewable" in eval_tasks
+    assert (
+        "progressive disclosure and portability rules remain discoverable" in eval_tasks
+    )
+    assert (
+        "trigger, execution, regression, and token-budget expectations stay explicit"
+        in eval_tasks
+    )
     assert (
         "unsupported policy claims, missing review gates, or doc/test drift"
         in eval_tasks
@@ -185,3 +227,12 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "HITL approval point:" in day2_task_packet
     assert "Write permission / read-only expectation:" in day2_task_packet
     assert "Transport/schema debugging plan:" in day2_task_packet
+
+    assert "Desired outcome:" in day3_task_packet
+    assert "governance-only" in day3_task_packet
+    assert "Working mode: `production`" in day3_task_packet
+    assert "External dependency or registry:" in day3_task_packet
+    assert "official guidance source" in day3_task_packet
+    assert "docs/contract-test enforcement only" in day3_task_packet
+    assert "Trust level: `official`" in day3_task_packet
+    assert "Data scope: `sanitized`" in day3_task_packet

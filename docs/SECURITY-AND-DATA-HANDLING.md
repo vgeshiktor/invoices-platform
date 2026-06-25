@@ -145,6 +145,16 @@ Not allowed:
 
 If a workflow needs a new outbound destination, document it before use and treat it as a security review point.
 
+## Skill Adoption and Data Exposure
+
+Treat third-party or public skills like executable dependencies.
+
+- third-party/public skills are treated like executable dependencies and must be reviewed before use
+- pinning and audit expectations apply before shared adoption
+- real or production data should not flow through public-prototype-only skills
+- if a skill will touch sensitive, side-effectful, or external-tool work, apply the repo's existing trust-level, HITL, and read-only rules before adoption
+- do not assume marketplace popularity is a security signal; prefer official, internal, or otherwise vetted sources and review what the skill can execute in your context
+
 ## Production Data Prohibition for Agent Evaluations
 
 Agent-evaluation and benchmark material must not use production data.

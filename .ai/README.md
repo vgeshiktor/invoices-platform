@@ -44,6 +44,14 @@
 - Use declarative or trusted-catalog UI contracts for generated UI work; do not treat arbitrary executable UI as acceptable output.
 - Keep AP2/UCP-style payment or procurement work in `commerce-deferred` until the repo has an explicit transaction surface and dedicated safeguards.
 
+## Skill Governance Review Gate
+
+- For skill-related work, use the existing task-packet fields rather than adding a skill-specific template.
+- Treat external-skill adoption work like dependency review: record source, pinned version, trust level, data scope, HITL approval point, and validation expectations.
+- Treat future repo-local skill authoring work as governed workflow design: record intended trigger surface, non-goals, helper assets/scripts, and portability assumptions in the same packet structure.
+- For production/shared skill work, `Success criteria / eval rubric` and `Required validation` should cover `trigger`, `execution`, `regression`, and `token budget`.
+- Keep skill governance proportional to current repo maturity: document and test the rules now, and defer runtime enforcement until the repo has an actual local skill library to govern.
+
 ## Guardrails
 
 - Keep task packets short and anchored to real repo files.

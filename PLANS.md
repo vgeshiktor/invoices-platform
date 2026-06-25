@@ -59,4 +59,9 @@
   - expanded `.ai` task-packet and eval-review fields with trust level, data scope, HITL, and read-only expectations
   - added contract-test coverage so interoperability guardrails remain discoverable and hard to drift
   - explicitly deferred AP2/UCP-style commerce flows until the repo has a real autonomous transaction surface
+- `2026-06-25`: aligned repo governance with the Day 3 skill-governance guidance at the workflow layer:
+  - added repo-level defaults that distinguish `AGENTS.md`, Skills, and tools/MCP surfaces
+  - documented source-selection, pinning, progressive-disclosure, portability, and eval-coverage expectations for future skill work
+  - added a new day-3 governance task packet plus eval-catalog and contract-test coverage
+  - intentionally deferred repo-local skill creation, runtime enforcement, telemetry, and CI-driven skill execution until the repo has a real skill library to govern
 ---
