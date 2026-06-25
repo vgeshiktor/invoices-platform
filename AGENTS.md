@@ -47,6 +47,17 @@ Use `.ai/` for task-scoped packets and evaluation inputs/results when work is su
 - For UI-generating work, allow declarative or trusted-catalog UI contracts rather than arbitrary generated executable UI.
 - Defer AP2/UCP-style payment or procurement flows until the repo has an explicit autonomous transaction surface and dedicated guardrails.
 
+## Skill Governance Defaults
+
+- Treat `AGENTS.md` as always-loaded repo guidance, Skills as on-demand procedural runbooks, and tools/MCP servers as the execution surfaces those runbooks can call.
+- Skills are for narrow, repeatable workflows. Always-on project conventions belong in `AGENTS.md`, not in a skill body.
+- For adoption, prefer first-party, internal, or otherwise vetted skills first. Pin adopted skills to a reviewed version or commit, review them like code, and do not use public or unverified skills as production dependencies.
+- Future repo-local skills should follow one skill, one job. If a workflow cannot be described in one sentence, split it before writing `SKILL.md`.
+- The description field is the routing interface and must state what it does, when to use it, and when not to use it.
+- Use progressive disclosure for long or edge-case material by moving it into `references/`, and keep deterministic helper logic in `scripts/` when the agent would otherwise keep re-deriving it.
+- Do not hard-code secrets, credentials, or machine-specific paths. Repo-local skills should stay portable across compliant runtimes.
+- For sensitive, side-effectful, or real-data work, skill usage inherits the existing HITL, read-only, and sanitized data expectations from this repo's interoperability and security guidance.
+
 ## AI Context Budget
 
 - Start with `README.md`, `docs/USAGE.md`, and the active task packet if present.
