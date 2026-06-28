@@ -64,4 +64,9 @@
   - documented source-selection, pinning, progressive-disclosure, portability, and eval-coverage expectations for future skill work
   - added a new day-3 governance task packet plus eval-catalog and contract-test coverage
   - intentionally deferred repo-local skill creation, runtime enforcement, telemetry, and CI-driven skill execution until the repo has a real skill library to govern
+- `2026-06-28`: aligned repo governance with the Day 4 agent security and evaluation guidance at the workflow layer:
+  - added repo-level defaults for untrusted generated code, governed egress, narrow permissions, and high-risk approvals
+  - documented evaluation vocabulary for intent satisfaction, correctness, convention matching, trajectory quality, and self-repair behavior
+  - extended governance assets and contract coverage without changing the `.ai` template shape
+  - intentionally deferred runtime observability, security scanners, circuit breakers, and agent checkpoint infrastructure until the repo has real runtime surfaces to govern
 ---
