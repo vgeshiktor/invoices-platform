@@ -14,6 +14,9 @@ DAY2_INTEROP_TASK_PACKET = (
 DAY3_SKILL_GOVERNANCE_TASK_PACKET = (
     ROOT / ".ai" / "tasks" / "2026-06-25-day3-skill-governance.md"
 )
+DAY4_AGENT_SECURITY_EVAL_TASK_PACKET = (
+    ROOT / ".ai" / "tasks" / "2026-06-28-day4-agent-security-evaluation-governance.md"
+)
 
 
 def _read(path: Path) -> str:
@@ -62,6 +65,7 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     eval_tasks = _read(EVAL_TASKS)
     day2_task_packet = _read(DAY2_INTEROP_TASK_PACKET)
     day3_task_packet = _read(DAY3_SKILL_GOVERNANCE_TASK_PACKET)
+    day4_task_packet = _read(DAY4_AGENT_SECURITY_EVAL_TASK_PACKET)
 
     assert "## Agentic Engineering Defaults" in agents_guide
     assert "working mode: `prototype` for exploration or `production`" in agents_guide
@@ -101,6 +105,22 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "portable across compliant runtimes" in agents_guide
     assert "read-only" in agents_guide
     assert "sanitized" in agents_guide
+    assert "## Agent Security and Evaluation Defaults" in agents_guide
+    assert (
+        "generated code, generated dependencies, and new tools are untrusted until verified"
+        in agents_guide
+    )
+    assert (
+        "Prefer vetted registries, explicit pinning, and review-before-adoption"
+        in agents_guide
+    )
+    assert "Keep external access non-interactive and governed" in agents_guide
+    assert "keep permissions narrow" in agents_guide
+    assert (
+        "require human approval for high-risk or irreversible actions" in agents_guide
+    )
+    assert "small, reviewable change batches" in agents_guide
+    assert "staying inside the boundary is not enough to claim success" in agents_guide
 
     assert "## Lean-ctx Workflow" in agents_guide
     assert "start with `ctx_overview`" in agents_guide
@@ -151,6 +171,20 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "external-skill adoption work" in ai_readme
     assert "future repo-local skill authoring work" in ai_readme
     assert "`trigger`, `execution`, `regression`, and `token budget`" in ai_readme
+    assert "## Security and Evaluation Review Gate" in ai_readme
+    assert "`Trust level`, `Data scope`, `HITL approval point`" in ai_readme
+    assert "`Success criteria / eval rubric` and `Required validation`" in ai_readme
+    assert "intent satisfaction" in ai_readme
+    assert "visual and behavioral correctness" in ai_readme
+    assert "trajectory quality" in ai_readme
+    assert "self-repair behavior" in ai_readme
+    assert "automated functional testing" in ai_readme
+    assert "security/safety review" in ai_readme
+    assert "browser-based testing when UI changes exist" in ai_readme
+    assert (
+        "trace-level observability and internal-reasoning inspection as deferred prerequisites"
+        in ai_readme
+    )
 
     assert "Working mode: `prototype | production`" in task_packet_template
     assert "Success criteria / eval rubric:" in task_packet_template
@@ -194,9 +228,13 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "- id: agentic-alignment-governance-review" in eval_tasks
     assert "- id: day2-interoperability-governance-review" in eval_tasks
     assert "- id: day3-skill-governance-review" in eval_tasks
+    assert "- id: day4-agent-security-evaluation-governance-review" in eval_tasks
     assert (
         "Review Day 3 skill governance defaults and skill-library guardrails"
         in eval_tasks
+    )
+    assert (
+        "Review Day 4 agent security and evaluation governance defaults" in eval_tasks
     )
     assert (
         "Review Day 2 interoperability governance defaults and guardrails" in eval_tasks
@@ -213,6 +251,23 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     )
     assert (
         "trigger, execution, regression, and token-budget expectations stay explicit"
+        in eval_tasks
+    )
+    assert "supply-chain and dependency-adoption rules stay reviewable" in eval_tasks
+    assert (
+        "governed egress and non-interactive access expectations stay explicit"
+        in eval_tasks
+    )
+    assert (
+        "high-risk action approval and plain-language review expectations remain documented"
+        in eval_tasks
+    )
+    assert (
+        "security boundary checks remain distinct from shipping-quality evaluation"
+        in eval_tasks
+    )
+    assert (
+        "observability and scanner language stays deferred and non-speculative"
         in eval_tasks
     )
     assert (
@@ -236,3 +291,15 @@ def test_repo_governance_docs_define_lean_ctx_workflow_contract():
     assert "docs/contract-test enforcement only" in day3_task_packet
     assert "Trust level: `official`" in day3_task_packet
     assert "Data scope: `sanitized`" in day3_task_packet
+
+    assert "Desired outcome:" in day4_task_packet
+    assert "governance-only" in day4_task_packet
+    assert "Working mode: `production`" in day4_task_packet
+    assert "official guidance source" in day4_task_packet
+    assert "docs/contract-test enforcement only" in day4_task_packet
+    assert (
+        "no runtime observability, sandboxing infrastructure, SAST/SCA setup, or online-eval rollout"
+        in day4_task_packet
+    )
+    assert "Trust level: `official`" in day4_task_packet
+    assert "Data scope: `sanitized`" in day4_task_packet

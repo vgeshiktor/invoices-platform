@@ -52,6 +52,14 @@
 - For production/shared skill work, `Success criteria / eval rubric` and `Required validation` should cover `trigger`, `execution`, `regression`, and `token budget`.
 - Keep skill governance proportional to current repo maturity: document and test the rules now, and defer runtime enforcement until the repo has an actual local skill library to govern.
 
+## Security and Evaluation Review Gate
+
+- Use `Trust level`, `Data scope`, `HITL approval point`, and `Write permission / read-only expectation` to encode the security posture for agentic work.
+- Use `Success criteria / eval rubric` and `Required validation` to encode the evaluation posture for agentic work.
+- For production/shared agent work, review the seven evaluation dimensions explicitly: intent satisfaction, functional correctness, visual and behavioral correctness, cost and efficiency, code quality and convention matching, trajectory quality, and self-repair behavior.
+- For this repo's current maturity, allowed evaluation method mix is automated functional testing, security/safety review, human review, and browser-based testing when UI changes exist.
+- Treat trace-level observability and internal-reasoning inspection as deferred prerequisites for richer glass-box evaluation, not current repo requirements.
+
 ## Guardrails
 
 - Keep task packets short and anchored to real repo files.

@@ -155,6 +155,16 @@ Treat third-party or public skills like executable dependencies.
 - if a skill will touch sensitive, side-effectful, or external-tool work, apply the repo's existing trust-level, HITL, and read-only rules before adoption
 - do not assume marketplace popularity is a security signal; prefer official, internal, or otherwise vetted sources and review what the skill can execute in your context
 
+## Agentic Security Posture for Generated Changes
+
+Generated dependencies and packages must come from vetted or pinned sources before shared use.
+
+- generated dependencies and packages must come from vetted or pinned sources before shared adoption
+- public internet or tool access should remain governed and non-interactive where possible; do not let autonomous workflows fetch arbitrary public resources outside documented repo workflows
+- autonomous or AI-assisted work must not inherit broad ambient authority for sensitive actions; prefer bounded, task-scoped access and read-only or non-production scopes where possible
+- high-risk actions require structured human review with a plain-language explanation of what will change before approval
+- user corrections, screenshots, and evaluation evidence remain subject to the existing redaction and sanitized-data rules in this document
+
 ## Production Data Prohibition for Agent Evaluations
 
 Agent-evaluation and benchmark material must not use production data.

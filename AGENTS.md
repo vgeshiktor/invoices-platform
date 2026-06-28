@@ -58,6 +58,16 @@ Use `.ai/` for task-scoped packets and evaluation inputs/results when work is su
 - Do not hard-code secrets, credentials, or machine-specific paths. Repo-local skills should stay portable across compliant runtimes.
 - For sensitive, side-effectful, or real-data work, skill usage inherits the existing HITL, read-only, and sanitized data expectations from this repo's interoperability and security guidance.
 
+## Agent Security and Evaluation Defaults
+
+- generated code, generated dependencies, and new tools are untrusted until verified; check them against repo policy, tests, and security guidance before shared use
+- Prefer vetted registries, explicit pinning, and review-before-adoption for packages, tools, and generated integrations to reduce hallucinated-package and slopsquatting risk.
+- Keep external access non-interactive and governed. Do not let autonomous workflows browse or fetch arbitrary public resources outside documented repo workflows and approved access paths.
+- keep permissions narrow, default sensitive work to read-only or non-production scopes, and require human approval for high-risk or irreversible actions
+- require small, reviewable change batches so failures stay inspectable and rollback remains tractable
+- Reject success claims that depend on deleting, weakening, or mocking tests instead of fixing the underlying behavior.
+- Distinguish safety/security from shipping quality: staying inside the boundary is not enough to claim success if intent, correctness, or repo conventions drift.
+
 ## AI Context Budget
 
 - Start with `README.md`, `docs/USAGE.md`, and the active task packet if present.

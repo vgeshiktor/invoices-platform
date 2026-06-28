@@ -313,6 +313,35 @@ legacy_review_templates:
       - Skill governance stays proportional to repo maturity and does not invent a repo-local runtime.
       - Repo contract tests protect the documented defaults without adding telemetry or runtime enforcement.
 
+  - id: day4-agent-security-evaluation-governance-review
+    name: Review Day 4 agent security and evaluation governance defaults
+    mode: production
+    reasoning_level: ai:review
+    scope: governance review of agent security posture and evaluation expectations across repo rules, task packets, eval templates, security guidance, and contract tests
+    source_of_truth:
+      - AGENTS.md
+      - PLANS.md
+      - .ai/README.md
+      - .ai/evals/tasks.yaml
+      - .ai/tasks/2026-06-28-day4-agent-security-evaluation-governance.md
+      - docs/SECURITY-AND-DATA-HANDLING.md
+      - tests/test_repo_verify_contract.py
+    rubric:
+      - supply-chain and dependency-adoption rules stay reviewable
+      - governed egress and non-interactive access expectations stay explicit
+      - high-risk action approval and plain-language review expectations remain documented
+      - security boundary checks remain distinct from shipping-quality evaluation
+      - the seven evaluation dimensions stay discoverable and repo-appropriate
+      - observability and scanner language stays deferred and non-speculative
+    ship_gate: day-4 security and evaluation governance must stay repo-backed, reviewable, and non-speculative
+    required_validation:
+      - Check that generated code, dependencies, and tools are treated as untrusted until verified.
+      - Check that evaluation guidance distinguishes shipping quality from boundary safety and reuses existing `.ai` fields.
+      - Flag unsupported policy claims, missing review gates, or doc/test drift.
+    success_criteria:
+      - Repo guidance captures the day-4 security posture without inventing runtime enforcement.
+      - Repo guidance captures the day-4 evaluation vocabulary without claiming current observability or scanner infrastructure.
+
 p1_after_first_hardening_pr:
   - Add property-based tests for deduplication, date intervals, and monetary calculations.
   - Validate the OpenAPI draft against actual implementation boundaries.
